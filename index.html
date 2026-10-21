@@ -53,6 +53,7 @@
       <p id="status"></p>
       <p id="cmsg"></p>
       <button onclick="hangup()">Hang up</button>
+      <button id="muteBtn" onclick="toggleMute()">Mute</button>
       <button onclick="logout()">Log out</button>
       <audio id="out" autoplay></audio>
     </div>
@@ -67,7 +68,17 @@ const sb = supabase.createClient(
 const $ = id => document.getElementById(id);
 const PREFIX = 'skychaser-audio-';
 const pid = uid => PREFIX + uid;
-const mic = () => navigator.mediaDevices.getUserMedia({audio: true});
+let localStream = null, muted = false;
+const mic = async () => {
+  if (!localStream) localStream = await navigator.mediaDevices.getUserMedia({audio: true});
+  localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+  return localStream;
+};
+function toggleMute() {
+  muted = !muted;
+  if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+  $('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+}
 let peer, me, current;
 let friends = [], incoming = [], outgoing = [];
 
@@ -210,7 +221,10 @@ function setCall(c, who) {
   current = c;
   $('cmsg').textContent = 'On a call with @' + who;
   c.on('stream', s => $('out').srcObject = s);
-  c.on('close', () => $('cmsg').textContent = 'Call ended.');
+  c.on('close', () => {
+    $('cmsg').textContent = 'Call ended.';
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  });
 }
 async function callFriend(f) {
   $('cmsg').textContent = 'Calling @' + f.username + '...';
