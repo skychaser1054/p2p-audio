@@ -1,18 +1,68 @@
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2P Audio</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<p>Your ID: <b id="me">...</b></p>
-<input id="them" placeholder="Friend's ID">
-<button onclick="call()">Call</button>
-<audio id="out" autoplay></audio>
+</head><body>
+
+<div id="login">
+  <h3>Log in</h3>
+  <input id="email" type="email" placeholder="Email"><br>
+  <input id="pass" type="password" placeholder="Password"><br>
+  <button onclick="login()">Log in</button> <button onclick="signup()">Sign up</button>
+  <p id="msg"></p>
+</div>
+
+<div id="app" style="display:none">
+  <p id="status">Connecting...</p>
+  <input id="them" placeholder="Partner's email">
+  <button onclick="call()">Call</button>
+  <button onclick="logout()">Log out</button>
+  <audio id="out" autoplay></audio>
+</div>
+
 <script>
-const peer = new Peer();
-peer.on('open', id => me.textContent = id);
-const mic = () => navigator.mediaDevices.getUserMedia({audio:true});
-peer.on('call', async c => {
-  c.answer(await mic());
-  c.on('stream', s => out.srcObject = s);
-});
+const sb = supabase.createClient(
+  'https://ueaqlinlpqgoxqlomyow.supabase.co',
+  'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT'
+);
+const pid = e => 'skychaser-audio-' + e.toLowerCase().replace(/[^a-z0-9]/g, '-');
+const mic = () => navigator.mediaDevices.getUserMedia({audio: true});
+let peer;
+
+async function login() {
+  const { error } = await sb.auth.signInWithPassword({
+    email: email.value, password: pass.value
+  });
+  msg.textContent = error ? error.message : '';
+  if (!error) start();
+}
+async function signup() {
+  const { error } = await sb.auth.signUp({ email: email.value, password: pass.value });
+  msg.textContent = error ? error.message : "Check your email to confirm, then log in.";
+}
+async function logout() { await sb.auth.signOut(); location.reload(); }
+
+async function start() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return;
+  login_.style = 'display:none';
+  app.style.display = 'block';
+  them.value = localStorage.getItem('partner') || '';
+  peer = new Peer(pid(data.session.user.email));
+  peer.on('open', () => status.textContent = 'Ready: ' + data.session.user.email);
+  peer.on('call', async c => {
+    c.answer(await mic());
+    c.on('stream', s => out.srcObject = s);
+  });
+}
 async function call() {
-  const c = peer.call(them.value, await mic());
+  localStorage.setItem('partner', them.value);
+  const c = peer.call(pid(them.value), await mic());
   c.on('stream', s => out.srcObject = s);
 }
+const login_ = document.getElementById('login');
+start();
 </script>
+</body></html>
