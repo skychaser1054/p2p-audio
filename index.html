@@ -5,14 +5,58 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
-  body { font-family: sans-serif; margin: 0; padding: 12px; }
-  .layout { display: flex; flex-wrap: wrap; gap: 16px; }
-  #side { width: 280px; max-width: 100%; box-sizing: border-box;
-          border: 1px solid #ccc; border-radius: 8px; padding: 12px; }
-  #main { flex: 1; min-width: 240px; }
-  .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
-  .row span { flex: 1; }
-  h4 { margin: 14px 0 4px; }
+  :root { --panel:#121212; --card:#1f1f1f; --sub:#b3b3b3; --green:#1db954; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#000; color:#fff;
+         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  h3 { margin:0 0 16px; font-size:24px; }
+  h4 { margin:18px 0 6px; font-size:12px; color:var(--sub);
+       letter-spacing:.08em; text-transform:uppercase; }
+  small { color:var(--sub); }
+  button { font:inherit; font-weight:700; cursor:pointer; border:0; border-radius:500px;
+           padding:10px 20px; background:#fff; color:#000; transition:transform .1s; }
+  button:hover { transform:scale(1.04); }
+  input { display:block; width:100%; background:#2a2a2a; color:#fff; font:inherit;
+          border:1px solid transparent; border-radius:6px; padding:10px 12px; }
+  input:focus { outline:2px solid #fff; }
+  #loading { text-align:center; margin-top:30vh; color:var(--sub); }
+  #loginBox, #nameBox { max-width:340px; margin:12vh auto 0; background:var(--panel);
+          padding:32px; border-radius:12px; }
+  #loginBox input, #nameBox input { margin-bottom:12px; }
+  #loginBox br { display:none; }
+  #loginBox button[onclick="login()"], #nameBox button { background:var(--green); color:#000; }
+  #loginBox button[onclick="signup()"] { background:transparent; color:#fff;
+          border:1px solid #727272; }
+  #msg, #nmsg { color:#f15e6c; }
+  .layout { display:flex; gap:8px; padding:8px; height:calc(100vh - 100px); }
+  #side { width:300px; flex-shrink:0; background:var(--panel); border-radius:8px;
+          padding:16px; overflow-y:auto; }
+  #main { flex:1; min-width:0; border-radius:8px; padding:28px; overflow-y:auto;
+          background:linear-gradient(#2b3a67, var(--panel) 340px); }
+  #status { font-size:30px; font-weight:800; margin:0 0 8px; }
+  .hint { color:var(--sub); }
+  .row { display:flex; gap:6px; align-items:center; margin:2px 0; padding:6px 8px;
+         border-radius:6px; }
+  .row:hover { background:var(--card); }
+  .row span { flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; }
+  .row button { padding:5px 12px; font-size:12px; background:transparent; color:#fff;
+         border:1px solid #727272; }
+  .row button:first-of-type { background:var(--green); color:#000; border-color:var(--green); }
+  #reqOut .row button { background:transparent; color:#fff; border:1px solid #727272; }
+  #bar { position:fixed; left:0; right:0; bottom:0; height:84px; background:#000;
+         border-top:1px solid #222; padding:0 16px; display:flex; align-items:center;
+         justify-content:space-between; gap:12px; }
+  #barL, #barR { flex:1; }
+  #barR { text-align:right; }
+  #barC { display:flex; gap:10px; }
+  #cmsg { color:var(--sub); font-size:14px; }
+  .red { background:#e22134; color:#fff; }
+  .ghost { background:transparent; color:var(--sub); border:1px solid #727272; padding:8px 16px; }
+  @media (max-width:700px) {
+    .layout { flex-direction:column; height:auto; padding-bottom:100px; }
+    #side { width:100%; }
+    #status { font-size:24px; }
+  }
 </style>
 </head><body>
 
@@ -51,11 +95,16 @@
     </div>
     <div id="main">
       <p id="status"></p>
-      <p id="cmsg"></p>
-      <button onclick="hangup()">Hang up</button>
-      <button id="muteBtn" onclick="toggleMute()">Mute</button>
-      <button onclick="logout()">Log out</button>
+      <p class="hint">Pick a friend on the left and press Call.</p>
       <audio id="out" autoplay></audio>
+    </div>
+    <div id="bar">
+      <div id="barL"><span id="cmsg"></span></div>
+      <div id="barC">
+        <button id="muteBtn" onclick="toggleMute()">Mute</button>
+        <button class="red" onclick="hangup()">Hang up</button>
+      </div>
+      <div id="barR"><button class="ghost" onclick="logout()">Log out</button></div>
     </div>
   </div>
 </div>
