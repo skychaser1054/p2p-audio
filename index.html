@@ -1,0 +1,18 @@
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<p>Your ID: <b id="me">...</b></p>
+<input id="them" placeholder="Friend's ID">
+<button onclick="call()">Call</button>
+<audio id="out" autoplay></audio>
+<script>
+const peer = new Peer();
+peer.on('open', id => me.textContent = id);
+const mic = () => navigator.mediaDevices.getUserMedia({audio:true});
+peer.on('call', async c => {
+  c.answer(await mic());
+  c.on('stream', s => out.srcObject = s);
+});
+async function call() {
+  const c = peer.call(them.value, await mic());
+  c.on('stream', s => out.srcObject = s);
+}
+</script>
