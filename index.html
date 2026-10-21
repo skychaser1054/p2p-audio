@@ -4,7 +4,19 @@
 <title>P2P Audio</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 12px; }
+  .layout { display: flex; flex-wrap: wrap; gap: 16px; }
+  #side { width: 280px; max-width: 100%; box-sizing: border-box;
+          border: 1px solid #ccc; border-radius: 8px; padding: 12px; }
+  #main { flex: 1; min-width: 240px; }
+  .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+  .row span { flex: 1; }
+  h4 { margin: 14px 0 4px; }
+</style>
 </head><body>
+
+<p id="loading">Loading...</p>
 
 <div id="loginBox" style="display:none">
   <h3>Log in</h3>
@@ -23,12 +35,28 @@
 </div>
 
 <div id="appBox" style="display:none">
-  <p id="status"></p>
-  <input id="them" placeholder="Partner's username">
-  <button onclick="call()">Call</button>
-  <button onclick="logout()">Log out</button>
-  <p id="cmsg"></p>
-  <audio id="out" autoplay></audio>
+  <div class="layout">
+    <div id="side">
+      <h4 style="margin-top:0">Add friend</h4>
+      <div class="row">
+        <input id="addName" placeholder="Username" style="flex:1;min-width:0">
+        <button onclick="addFriend()">Add</button>
+      </div>
+      <small id="fmsg"></small>
+      <h4>Requests</h4>
+      <div id="reqIn"></div>
+      <div id="reqOut"></div>
+      <h4>Friends</h4>
+      <div id="friendList"></div>
+    </div>
+    <div id="main">
+      <p id="status"></p>
+      <p id="cmsg"></p>
+      <button onclick="hangup()">Hang up</button>
+      <button onclick="logout()">Log out</button>
+      <audio id="out" autoplay></audio>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -37,15 +65,19 @@ const sb = supabase.createClient(
   'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT'
 );
 const $ = id => document.getElementById(id);
-const pid = uid => 'skychaser-audio-' + uid;
+const PREFIX = 'skychaser-audio-';
+const pid = uid => PREFIX + uid;
 const mic = () => navigator.mediaDevices.getUserMedia({audio: true});
-let peer, me;
+let peer, me, current;
+let friends = [], incoming = [], outgoing = [];
 
 function show(box) {
+  $('loading').style.display = 'none';
   for (const b of ['loginBox', 'nameBox', 'appBox'])
     $(b).style.display = (b === box) ? 'block' : 'none';
 }
 
+/* ---------- login ---------- */
 async function login() {
   if (!$('email').value || !$('pass').value) {
     $('msg').textContent = 'Enter your email and password first.'; return;
@@ -55,7 +87,6 @@ async function login() {
   });
   if (error) $('msg').textContent = error.message; else start();
 }
-
 async function signup() {
   if (!$('email').value || !$('pass').value) {
     $('msg').textContent = 'Enter your email and password first.'; return;
@@ -66,7 +97,6 @@ async function signup() {
   $('msg').textContent = error ? error.message
     : 'Account created. Confirm your email if asked, then log in.';
 }
-
 async function logout() { await sb.auth.signOut(); location.reload(); }
 
 async function start() {
@@ -79,7 +109,6 @@ async function start() {
   me.username = prof.username;
   openApp();
 }
-
 async function saveName() {
   const name = $('uname').value.trim().toLowerCase();
   if (!/^[a-z0-9_]{3,20}$/.test(name)) {
@@ -95,28 +124,114 @@ async function saveName() {
   openApp();
 }
 
-function openApp() {
+/* ---------- friends ---------- */
+function row(text, buttons) {
+  const d = document.createElement('div');
+  d.className = 'row';
+  const s = document.createElement('span');
+  s.textContent = text;
+  d.appendChild(s);
+  for (const [label, fn] of buttons) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = fn;
+    d.appendChild(b);
+  }
+  return d;
+}
+function fill(id, items, make, emptyText) {
+  const el = $(id);
+  el.replaceChildren();
+  if (!items.length && emptyText) {
+    const p = document.createElement('small');
+    p.textContent = emptyText;
+    el.appendChild(p);
+  }
+  items.forEach(i => el.appendChild(make(i)));
+}
+function render() {
+  fill('reqIn', incoming, i => row('@' + i.username,
+    [['Accept', () => respond(i.rid, true)], ['Decline', () => respond(i.rid, false)]]),
+    'No requests');
+  fill('reqOut', outgoing, i => row('@' + i.username + ' (pending)',
+    [['Cancel', () => removeRow(i.rid)]]), '');
+  fill('friendList', friends, i => row('@' + i.username,
+    [['Call', () => callFriend(i)], ['Remove', () => removeRow(i.rid)]]),
+    'No friends yet');
+}
+async function refresh() {
+  const { data: rows, error } = await sb.from('friend_requests')
+    .select('id,sender,receiver,status');
+  if (error || !rows) return;
+  const ids = [...new Set(rows.flatMap(r => [r.sender, r.receiver]))]
+    .filter(i => i !== me.id);
+  const names = {};
+  if (ids.length) {
+    const { data: ps } = await sb.from('profiles').select('id,username').in('id', ids);
+    (ps || []).forEach(p => names[p.id] = p.username);
+  }
+  friends = []; incoming = []; outgoing = [];
+  for (const r of rows) {
+    const other = r.sender === me.id ? r.receiver : r.sender;
+    const item = { rid: r.id, id: other, username: names[other] || '?' };
+    if (r.status === 'accepted') friends.push(item);
+    else if (r.receiver === me.id) incoming.push(item);
+    else outgoing.push(item);
+  }
+  render();
+}
+async function addFriend() {
+  const name = $('addName').value.trim().toLowerCase().replace(/^@/, '');
+  if (!name) return;
+  if (name === me.username) { $('fmsg').textContent = "That's you."; return; }
+  const { data: p } = await sb.from('profiles')
+    .select('id').eq('username', name).maybeSingle();
+  if (!p) { $('fmsg').textContent = 'No user with that username.'; return; }
+  const { error } = await sb.from('friend_requests')
+    .insert({ sender: me.id, receiver: p.id, status: 'pending' });
+  $('fmsg').textContent = error
+    ? (error.code === '23505' ? 'Already requested, or already friends.' : error.message)
+    : 'Request sent.';
+  if (!error) $('addName').value = '';
+  refresh();
+}
+async function respond(rid, accept) {
+  if (accept) await sb.from('friend_requests').update({ status: 'accepted' }).eq('id', rid);
+  else await sb.from('friend_requests').delete().eq('id', rid);
+  refresh();
+}
+async function removeRow(rid) {
+  await sb.from('friend_requests').delete().eq('id', rid);
+  refresh();
+}
+
+/* ---------- calls ---------- */
+function setCall(c, who) {
+  current = c;
+  $('cmsg').textContent = 'On a call with @' + who;
+  c.on('stream', s => $('out').srcObject = s);
+  c.on('close', () => $('cmsg').textContent = 'Call ended.');
+}
+async function callFriend(f) {
+  $('cmsg').textContent = 'Calling @' + f.username + '...';
+  setCall(peer.call(pid(f.id), await mic()), f.username);
+}
+function hangup() { if (current) current.close(); }
+
+async function openApp() {
   show('appBox');
   $('status').textContent = 'Connecting...';
+  await refresh();
+  setInterval(refresh, 10000);
   peer = new Peer(pid(me.id));
   peer.on('open', () => $('status').textContent = 'Ready: @' + me.username);
   peer.on('error', e => $('status').textContent = 'Error: ' + e.type);
   peer.on('call', async c => {
+    const f = friends.find(x => pid(x.id) === c.peer);
+    if (!f) { c.close(); return; }
     c.answer(await mic());
-    c.on('stream', s => $('out').srcObject = s);
+    setCall(c, f.username);
   });
-  $('them').value = localStorage.getItem('partner') || '';
-}
-
-async function call() {
-  const name = $('them').value.trim().toLowerCase().replace(/^@/, '');
-  const { data: p } = await sb.from('profiles')
-    .select('id').eq('username', name).maybeSingle();
-  if (!p) { $('cmsg').textContent = 'No user with that username.'; return; }
-  localStorage.setItem('partner', name);
-  $('cmsg').textContent = 'Calling...';
-  const c = peer.call(pid(p.id), await mic());
-  c.on('stream', s => $('out').srcObject = s);
 }
 
 start();
