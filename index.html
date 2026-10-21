@@ -6,19 +6,28 @@
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head><body>
 
-<div id="login">
+<div id="loginBox">
   <h3>Log in</h3>
   <input id="email" type="email" placeholder="Email"><br>
   <input id="pass" type="password" placeholder="Password"><br>
-  <button onclick="login()">Log in</button> <button onclick="signup()">Sign up</button>
+  <button onclick="login()">Log in</button>
+  <button onclick="signup()">Sign up</button>
   <p id="msg"></p>
 </div>
 
-<div id="app" style="display:none">
-  <p id="status">Connecting...</p>
-  <input id="them" placeholder="Partner's email">
+<div id="nameBox" style="display:none">
+  <h3>Pick a username</h3>
+  <input id="uname" placeholder="3-20 letters, numbers, _">
+  <button onclick="saveName()">Save</button>
+  <p id="nmsg"></p>
+</div>
+
+<div id="appBox" style="display:none">
+  <p id="status"></p>
+  <input id="them" placeholder="Partner's username">
   <button onclick="call()">Call</button>
   <button onclick="logout()">Log out</button>
+  <p id="cmsg"></p>
   <audio id="out" autoplay></audio>
 </div>
 
@@ -27,42 +36,89 @@ const sb = supabase.createClient(
   'https://ueaqlinlpqgoxqlomyow.supabase.co',
   'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT'
 );
-const pid = e => 'skychaser-audio-' + e.toLowerCase().replace(/[^a-z0-9]/g, '-');
+const $ = id => document.getElementById(id);
+const pid = uid => 'skychaser-audio-' + uid;
 const mic = () => navigator.mediaDevices.getUserMedia({audio: true});
-let peer;
+let peer, me;
+
+function show(box) {
+  for (const b of ['loginBox', 'nameBox', 'appBox'])
+    $(b).style.display = (b === box) ? 'block' : 'none';
+}
 
 async function login() {
+  if (!$('email').value || !$('pass').value) {
+    $('msg').textContent = 'Enter your email and password first.'; return;
+  }
   const { error } = await sb.auth.signInWithPassword({
-    email: email.value, password: pass.value
+    email: $('email').value, password: $('pass').value
   });
-  msg.textContent = error ? error.message : '';
-  if (!error) start();
+  if (error) $('msg').textContent = error.message; else start();
 }
+
 async function signup() {
-  const { error } = await sb.auth.signUp({ email: email.value, password: pass.value });
-  msg.textContent = error ? error.message : "Check your email to confirm, then log in.";
+  if (!$('email').value || !$('pass').value) {
+    $('msg').textContent = 'Enter your email and password first.'; return;
+  }
+  const { error } = await sb.auth.signUp({
+    email: $('email').value, password: $('pass').value
+  });
+  $('msg').textContent = error ? error.message
+    : 'Account created. Confirm your email if asked, then log in.';
 }
+
 async function logout() { await sb.auth.signOut(); location.reload(); }
 
 async function start() {
   const { data } = await sb.auth.getSession();
-  if (!data.session) return;
-  login_.style = 'display:none';
-  app.style.display = 'block';
-  them.value = localStorage.getItem('partner') || '';
-  peer = new Peer(pid(data.session.user.email));
-  peer.on('open', () => status.textContent = 'Ready: ' + data.session.user.email);
+  if (!data.session) return show('loginBox');
+  me = data.session.user;
+  const { data: prof } = await sb.from('profiles')
+    .select('username').eq('id', me.id).maybeSingle();
+  if (!prof) return show('nameBox');
+  me.username = prof.username;
+  openApp();
+}
+
+async function saveName() {
+  const name = $('uname').value.trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(name)) {
+    $('nmsg').textContent = 'Use 3-20 letters, numbers, or underscores.'; return;
+  }
+  const { error } = await sb.from('profiles').insert({ id: me.id, username: name });
+  if (error) {
+    $('nmsg').textContent = error.code === '23505'
+      ? 'That username is taken, try another.' : error.message;
+    return;
+  }
+  me.username = name;
+  openApp();
+}
+
+function openApp() {
+  show('appBox');
+  $('status').textContent = 'Connecting...';
+  peer = new Peer(pid(me.id));
+  peer.on('open', () => $('status').textContent = 'Ready: @' + me.username);
+  peer.on('error', e => $('status').textContent = 'Error: ' + e.type);
   peer.on('call', async c => {
     c.answer(await mic());
-    c.on('stream', s => out.srcObject = s);
+    c.on('stream', s => $('out').srcObject = s);
   });
+  $('them').value = localStorage.getItem('partner') || '';
 }
+
 async function call() {
-  localStorage.setItem('partner', them.value);
-  const c = peer.call(pid(them.value), await mic());
-  c.on('stream', s => out.srcObject = s);
+  const name = $('them').value.trim().toLowerCase().replace(/^@/, '');
+  const { data: p } = await sb.from('profiles')
+    .select('id').eq('username', name).maybeSingle();
+  if (!p) { $('cmsg').textContent = 'No user with that username.'; return; }
+  localStorage.setItem('partner', name);
+  $('cmsg').textContent = 'Calling...';
+  const c = peer.call(pid(p.id), await mic());
+  c.on('stream', s => $('out').srcObject = s);
 }
-const login_ = document.getElementById('login');
+
 start();
 </script>
 </body></html>
