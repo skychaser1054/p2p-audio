@@ -342,16 +342,17 @@ const IC = {
   library: '<path d="M4 4v16M9 4v16"/><path d="m14 5 6 14"/>',
   create: '<path d="M12 5v14M5 12h14"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   friends: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.2.6 3.5 2.4 3.5 5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>'
 };
 const svg = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
-const NAV = [['home','Home'],['search','Search'],['library','Library'],['create','Create'],['upload','Upload'],['friends','Friends & Calls']];
-const TABS = [['home','Home'],['search','Search'],['library','Library'],['create','Create'],['friends','Friends']];
-const TITLES = { home:'Home', search:'Search', library:'Your Library', create:'Create', upload:'Upload', friends:'Friends & Calls',
+const NAV = [['home','Home'],['search','Search'],['library','Library'],['create','Create'],['upload','Upload'],['music','Music Import'],['friends','Friends & Calls']];
+const TABS = [['home','Home'],['search','Search'],['library','Library'],['music','Music'],['friends','Friends']];
+const TITLES = { home:'Home', search:'Search', library:'Your Library', create:'Create', upload:'Upload', music:'Music Import', friends:'Friends & Calls',
   settings:'Settings', profile:'Your profile', userprofile:'Profile', playlist:'Playlist', liked:'Liked Songs', recent:'Recently Played' };
 const TABOF = { home:'home', search:'search', library:'library', playlist:'library', liked:'library', recent:'library',
-  create:'create', upload:'create', friends:'friends', userprofile:'friends' };
+  create:'create', upload:'create', music:'music', friends:'friends', userprofile:'friends' };
 const TOP = new Set(['home','search','library','friends']);
 
 /* ---------- state ---------- */
@@ -469,7 +470,7 @@ async function openApp() {
   initPeer();
   await Promise.all([loadSongs(), loadFavs(), loadRecent(), refreshFriends(), loadPlaylists()]);
   history.replaceState({ v: 'home', arg: null }, '');
-  go('home', null, true);   // the app always opens on Home, even after a refresh
+  go(new URLSearchParams(location.search).has('code') || new URLSearchParams(location.search).has('error') ? 'music' : 'home', null, true);
   setInterval(refreshFriends, 10000);
   setInterval(() => { if (view === 'friends' && selectedChat) renderChatArea(); }, 6000);
 }
@@ -698,6 +699,27 @@ async function build(v) {
          <textarea id="upLyrics" rows="5" placeholder="Lyrics (optional). Plain text, or timed lines like [01:23.50] words"></textarea>
          <button class="green" id="upBtn" data-act="upload" style="align-self:flex-start">Upload song</button>
        </div>`];
+  }
+
+  if (v === 'music') {
+    return [head('Music Import', 'Spotify playlist discovery + authorized music search') +
+      `<div class="form" style="max-width:720px">
+        <h3>Spotify playlist import</h3>
+        <p class="sub">Connect Spotify to import track names and artists. Spotify audio is not downloaded or copied.</p>
+        <input id="spotifyClient" type="text" placeholder="Spotify app Client ID" value="${esc(localStorage.getItem('p2p_spotify_client')||'')}">
+        <button class="green" data-act="spotifyconnect" style="align-self:flex-start">Connect Spotify</button>
+        <input id="spotifyPlaylist" type="text" placeholder="Paste Spotify playlist URL or ID">
+        <button class="ghost" data-act="spotifyimport" style="align-self:flex-start">Import playlist tracks</button>
+        <small id="spotifyStatus"></small>
+        <h3>Search music</h3>
+        <p class="sub">Search the iTunes music catalog for identification and short previews. Previews are not downloadable or stored. To permanently host a recording, upload an audio file you own or are licensed to distribute.</p>
+        <div class="row"><input id="musicSearch" type="search" placeholder="Song or artist" style="flex:1;min-width:0"><button data-act="musicsearch">Search</button></div>
+        <div id="musicSearchResults"></div>
+        <h3>Imported track list</h3>
+        <p class="sub">Saved in this browser. A track becomes playable from your site's Supabase library only after an authorized audio file is uploaded.</p>
+        <div id="importedTracks"></div>
+        <button class="ghost" data-act="nav" data-v="upload" style="align-self:flex-start">Upload authorized audio to Supabase</button>
+      </div>`, () => { showImportedTracks(); handleSpotifyCallback(); }];
   }
 
   if (v === 'friends') {
@@ -1377,6 +1399,101 @@ async function upload() {
   query = ''; go('search');
 }
 
+
+/* ---------- authorized music discovery and Spotify metadata import ---------- */
+const spotifyRedirect = () => location.origin + location.pathname;
+const importedKey = () => 'p2p_imported_' + (me?.id || 'anon');
+function importedTracks() { try { return JSON.parse(localStorage.getItem(importedKey()) || '[]'); } catch { return []; } }
+function storeImported(items) { localStorage.setItem(importedKey(), JSON.stringify(items.slice(0, 1000))); showImportedTracks(); }
+function addImportedTrack(t) {
+  const items = importedTracks();
+  if (!items.some(x => x.title.toLowerCase() === t.title.toLowerCase() && x.artist.toLowerCase() === t.artist.toLowerCase())) {
+    items.push({title:t.title, artist:t.artist, source:t.source || 'catalog'});
+    storeImported(items);
+  } else toast('Already imported');
+}
+function removeImportedTrack(i) { const a = importedTracks(); a.splice(i,1); storeImported(a); }
+function showImportedTracks() {
+  const el = $('importedTracks'); if (!el) return;
+  const tracks = importedTracks();
+  el.innerHTML = tracks.length ? tracks.map((t,i) => {
+    const match = songs.find(s => s.title?.toLowerCase() === t.title.toLowerCase() && s.artist?.toLowerCase() === t.artist.toLowerCase());
+    return `<div class="prow"><div style="flex:1;min-width:0"><b>${esc(t.title)}</b><div class="sub">${esc(t.artist)} · ${esc(t.source)}</div></div><small>${match ? 'Available in library' : 'Metadata only'}</small><button class="ghost" data-act="musicremove" data-index="${i}">Remove</button></div>`;
+  }).join('') : '<p class="sub">No imported tracks yet.</p>';
+}
+async function searchMusicCatalog() {
+  const q = $('musicSearch')?.value.trim(), el = $('musicSearchResults');
+  if (!q || !el) return;
+  el.textContent = 'Searching…';
+  try {
+    const res = await fetch('https://itunes.apple.com/search?entity=song&limit=25&term=' + encodeURIComponent(q));
+    if (!res.ok) throw Error('Catalog search unavailable');
+    const data = await res.json();
+    el.innerHTML = (data.results || []).map(t => {
+      const track = encodeURIComponent(JSON.stringify({title:t.trackName,artist:t.artistName,source:'iTunes catalog'}));
+      const preview = t.previewUrl && /^https:\/\//.test(t.previewUrl) ? `<audio controls preload="none" src="${esc(t.previewUrl)}" style="max-width:210px;width:100%"></audio>` : '';
+      return `<div class="prow"><div style="flex:1;min-width:0"><b>${esc(t.trackName)}</b><div class="sub">${esc(t.artistName)}</div></div>${preview}<button class="ghost" data-act="musicadd" data-track="${track}">Save title</button></div>`;
+    }).join('') || '<p class="sub">No results.</p>';
+  } catch (e) { el.textContent = e.message + '. Try again later.'; }
+}
+function b64url(bytes) { return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+async function connectSpotify() {
+  const id = $('spotifyClient')?.value.trim();
+  if (!/^[a-zA-Z0-9]{20,80}$/.test(id || '')) return toast('Enter a valid Spotify app Client ID');
+  localStorage.setItem('p2p_spotify_client', id);
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(64)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const state = b64url(crypto.getRandomValues(new Uint8Array(20)));
+  sessionStorage.setItem('p2p_spotify_pkce', JSON.stringify({verifier,state}));
+  const url = new URL('https://accounts.spotify.com/authorize');
+  url.search = new URLSearchParams({client_id:id,response_type:'code',redirect_uri:spotifyRedirect(),scope:'playlist-read-private playlist-read-collaborative',code_challenge_method:'S256',code_challenge:b64url(new Uint8Array(digest)),state}).toString();
+  location.href = url.href;
+}
+async function handleSpotifyCallback() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has('code') && !p.has('error')) return;
+  const status = $('spotifyStatus');
+  if (p.has('error')) { if (status) status.textContent = 'Spotify: ' + p.get('error'); history.replaceState(history.state,'',location.pathname); return; }
+  try {
+    const pkce = JSON.parse(sessionStorage.getItem('p2p_spotify_pkce') || '{}');
+    if (!pkce.verifier || pkce.state !== p.get('state')) throw Error('Spotify security check failed. Connect again.');
+    const res = await fetch('https://accounts.spotify.com/api/token', {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:localStorage.getItem('p2p_spotify_client'),grant_type:'authorization_code',code:p.get('code'),redirect_uri:spotifyRedirect(),code_verifier:pkce.verifier})});
+    const token = await res.json();
+    if (!res.ok || !token.access_token) throw Error(token.error_description || 'Spotify authorization failed');
+    sessionStorage.setItem('p2p_spotify_token',token.access_token);
+    sessionStorage.removeItem('p2p_spotify_pkce');
+    if (status) status.textContent = 'Spotify connected. Paste a playlist link below.';
+  } catch (e) { if (status) status.textContent = e.message; }
+  history.replaceState(history.state,'',location.pathname);
+}
+async function importSpotifyPlaylist() {
+  const status = $('spotifyStatus'), token = sessionStorage.getItem('p2p_spotify_token');
+  if (!token) return toast('Connect Spotify first');
+  const raw = $('spotifyPlaylist')?.value.trim() || '';
+  const id = raw.match(/playlist\/([a-zA-Z0-9]+)/)?.[1] || (/^[a-zA-Z0-9]{15,50}$/.test(raw) ? raw : null);
+  if (!id) return toast('Paste a valid Spotify playlist URL or ID');
+  if (status) status.textContent = 'Importing playlist metadata…';
+  try {
+    let url = 'https://api.spotify.com/v1/playlists/' + encodeURIComponent(id) + '/items?limit=50';
+    const all = importedTracks();
+    let pages = 0, count = 0;
+    while (url && pages++ < 20) {
+      const r = await fetch(url,{headers:{Authorization:'Bearer '+token}});
+      const data = await r.json();
+      if (!r.ok) throw Error(data.error?.message || 'Spotify API request failed');
+      for (const item of data.items || []) {
+        const t = item.item || item.track;
+        if (!t?.name || !t.artists?.length) continue;
+        const obj = {title:t.name,artist:t.artists.map(a=>a.name).join(', '),source:'Spotify playlist'};
+        if (!all.some(x=>x.title.toLowerCase()===obj.title.toLowerCase() && x.artist.toLowerCase()===obj.artist.toLowerCase())) { all.push(obj); count++; }
+      }
+      url = data.next;
+    }
+    storeImported(all);
+    if (status) status.textContent = `Imported ${count} track titles. No Spotify audio was downloaded.`;
+  } catch(e) { if (status) status.textContent = e.message; }
+}
+
 /* ---------- events ---------- */
 let deb;
 $('main').addEventListener('submit', e => { if (e.target.id === 'chatForm') sendChatMessage(e); });
@@ -1415,6 +1532,11 @@ $('main').addEventListener('click', async e => {
   const act = el.dataset.act;
   const rowEl = el.closest('.song');
   const s = rowEl ? (lists[rowEl.dataset.l] || [])[rowEl.dataset.i] : null;
+  if (act === 'spotifyconnect') return connectSpotify();
+  if (act === 'spotifyimport') return importSpotifyPlaylist();
+  if (act === 'musicsearch') return searchMusicCatalog();
+  if (act === 'musicadd') return addImportedTrack(decodeURIComponent(el.dataset.track));
+  if (act === 'musicremove') return removeImportedTrack(Number(el.dataset.index));
   if (act === 'nav') return go(el.dataset.v);
   if (act === 'artist') { query = el.dataset.name; $('q').value = query; return renderResults(); }
   if (act === 'play' && s) { queue = lists[rowEl.dataset.l].slice(); return playIndex(Number(rowEl.dataset.i)); }
