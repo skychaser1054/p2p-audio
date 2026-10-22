@@ -1,124 +1,301 @@
 <!DOCTYPE html>
-<html><head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>P2P Audio</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
-  :root { --panel:#121212; --card:#1f1f1f; --sub:#b3b3b3; --green:#1db954; color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:#000; color:#fff;
+  :root { --panel:#121212; --card:#1f1f1f; --sub:#b3b3b3; --green:#1db954; --tint:#1d3a2a;
+          --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); color-scheme: dark; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  [hidden] { display:none !important; }
+  html { height:100%; }
+  body { margin:0; background:#000; color:#fff; height:100vh; height:100dvh; display:flex; flex-direction:column;
+         overflow:auto; overscroll-behavior:none;
          font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  h3 { margin:0 0 16px; font-size:24px; }
-  h4 { margin:18px 0 6px; font-size:12px; color:var(--sub);
-       letter-spacing:.08em; text-transform:uppercase; }
-  small { color:var(--sub); }
-  button { font:inherit; font-weight:700; cursor:pointer; border:0; border-radius:500px;
-           padding:10px 20px; background:#fff; color:#000; transition:transform .1s; }
-  button:hover { transform:scale(1.04); }
-  input { display:block; width:100%; background:#2a2a2a; color:#fff; font:inherit;
-          border:1px solid transparent; border-radius:6px; padding:10px 12px; }
-  input:focus { outline:2px solid #fff; }
+  h2 { margin:0 0 4px; font-size:28px; }
+  h3 { margin:24px 0 8px; font-size:18px; }
+  h4 { margin:18px 0 6px; font-size:12px; color:var(--sub); letter-spacing:.08em; text-transform:uppercase; }
+  small, .sub { color:var(--sub); }
+  button { font:inherit; font-weight:700; cursor:pointer; border:0; border-radius:500px; padding:9px 18px;
+           background:#fff; color:#000; touch-action:manipulation; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+  .green { background:var(--green); color:#000; }
+  .green:hover { filter:brightness(1.08); }
+  .ghost { background:transparent; color:#fff; border:1px solid #727272; }
+  .red { background:#e22134; color:#fff; }
+  input[type=text], input[type=search], input[type=email], input[type=password], select, textarea {
+    display:block; width:100%; background:#2a2a2a; color:#fff; font:inherit; font-size:16px;
+    border:1px solid transparent; border-radius:6px; padding:10px 12px; }
+  input[type=file] { color:var(--sub); max-width:100%; }
+  input[type=search] { border-radius:500px; padding:12px 18px; }
+
+  /* ---------- auth ---------- */
   #loading { text-align:center; margin-top:30vh; color:var(--sub); }
-  #loginBox, #nameBox { max-width:340px; margin:12vh auto 0; background:var(--panel);
-          padding:32px; border-radius:12px; }
+  #loginBox, #nameBox { width:calc(100% - 32px); max-width:340px; margin:12vh auto 0; background:var(--panel); padding:32px; border-radius:12px; }
   #loginBox input, #nameBox input { margin-bottom:12px; }
   #loginBox br { display:none; }
   #loginBox button[onclick="login()"], #nameBox button { background:var(--green); color:#000; }
-  #loginBox button[onclick="signup()"] { background:transparent; color:#fff;
-          border:1px solid #727272; }
+  #loginBox button[onclick="signup()"] { background:transparent; color:#fff; border:1px solid #727272; }
   #msg, #nmsg { color:#f15e6c; }
-  .layout { display:flex; gap:8px; padding:8px; height:calc(100vh - 100px); }
-  #side { width:300px; flex-shrink:0; background:var(--panel); border-radius:8px;
-          padding:16px; overflow-y:auto; }
-  #main { flex:1; min-width:0; border-radius:8px; padding:28px; overflow-y:auto;
-          background:linear-gradient(#2b3a67, var(--panel) 340px); }
-  #status { font-size:30px; font-weight:800; margin:0 0 8px; }
-  .hint { color:var(--sub); }
-  .row { display:flex; gap:6px; align-items:center; margin:2px 0; padding:6px 8px;
-         border-radius:6px; }
+
+  /* ---------- app shell ---------- */
+  #appBox { display:none; flex:1; min-height:0; flex-direction:column; overflow:hidden; }
+  #layout { flex:1; min-height:0; display:flex; gap:8px; padding:8px 8px 0; }
+  #nav { width:260px; flex-shrink:0; background:var(--panel); border-radius:8px; padding:8px; display:flex; flex-direction:column; min-height:0; }
+  .nv { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:transparent; color:var(--sub);
+        border-radius:6px; padding:11px 12px; font-weight:700; position:relative; }
+  .nv:hover { color:#fff; }
+  .nv.on { color:#fff; background:var(--card); }
+  .nv svg { width:22px; height:22px; flex-shrink:0; }
+  .nv.prof { padding:10px 12px; margin-bottom:4px; color:#fff; }
+  .nv.prof span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #navLists { flex:1; min-height:0; overflow-y:auto; }
+  .pli { padding:7px 12px; gap:12px; font-weight:600; }
+  .pli .pn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pic { width:36px; height:36px; border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+         background:linear-gradient(135deg,var(--green),#2b3a67); color:#fff; font-size:14px; }
+  .pic.liked { background:linear-gradient(135deg,#5b4bff,#b9a7ff); }
+  .pic.rec { background:linear-gradient(135deg,#0d7377,#32e0c4); }
+  #navBottom { border-top:1px solid #222; padding-top:6px; margin-top:6px; }
+  .badge { background:var(--green); color:#000; border-radius:999px; font-size:11px; min-width:18px; height:18px; line-height:18px;
+           padding:0 5px; text-align:center; font-weight:800; }
+  #nav .badge { margin-left:auto; }
+  .av { width:36px; height:36px; border-radius:50%; background:var(--green) center/cover no-repeat; color:#000; font-weight:800;
+        display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; padding:0; border:0; }
+  .av.big { width:96px; height:96px; font-size:40px; border:4px solid var(--panel); }
+
+  #wrap { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--panel); border-radius:8px; overflow:hidden; }
+  #phoneTop { display:none; align-items:center; gap:12px; padding:calc(10px + var(--sat)) 16px 8px; background:var(--panel); }
+  #ptTitle { flex:1; font-weight:800; font-size:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ib { background:transparent; color:#fff; padding:6px; width:40px; height:40px; display:flex; align-items:center; justify-content:center; font-size:26px; line-height:1; }
+  .ib svg { width:24px; height:24px; }
+  #main { flex:1; min-height:0; overflow-y:auto; padding:24px 28px 28px; overscroll-behavior:contain;
+          background:linear-gradient(var(--tint), var(--panel) 260px); }
+
+  /* ---------- dock: call bar, player, tab bar ---------- */
+  #dock { flex-shrink:0; background:#000; }
+  #callbar { display:none; align-items:center; gap:10px; padding:8px 16px; background:var(--green); color:#000; font-weight:700; }
+  #callbar.on { display:flex; }
+  #callbar span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #callbar button { background:#000; color:#fff; padding:8px 16px; }
+  #callbar button.red { background:#e22134; }
+  #bar { position:relative; height:84px; padding:0 16px; display:flex; align-items:center; gap:16px; border-top:1px solid #222; }
+  #miniProg { display:none; position:absolute; left:0; top:0; height:2px; width:0; background:var(--green); }
+  #np { width:28%; min-width:0; display:flex; flex-direction:column; cursor:pointer; }
+  #np b, #np small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #ctl { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  #ctl .btns { display:flex; gap:10px; align-items:center; }
+  #ctl .btns button { padding:6px 14px; }
+  #seekrow { display:flex; align-items:center; gap:8px; width:100%; max-width:520px; font-size:12px; color:var(--sub); }
+  #seek { flex:1; accent-color:var(--green); }
+  #tabbar { display:none; border-top:1px solid #222; padding-bottom:var(--sab); }
+  .tb { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; background:transparent; color:var(--sub);
+        padding:8px 2px 6px; font-size:11px; border-radius:0; position:relative; }
+  .tb.on { color:#fff; }
+  .tb svg { width:24px; height:24px; }
+  .tb .badge { position:absolute; top:3px; left:calc(50% + 6px); }
+
+  /* ---------- content pieces ---------- */
+  .song, .prow { display:flex; align-items:center; gap:10px; padding:8px; border-radius:6px; }
+  .song:hover, .prow:hover { background:var(--card); }
+  .prow { cursor:pointer; }
+  .song .t, .prow .t { flex:1; min-width:0; display:flex; flex-direction:column; cursor:pointer; }
+  .song .t b, .prow .t b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .song.cur .t b { color:var(--green); }
+  .pl { width:40px; height:40px; padding:0; background:var(--green); flex-shrink:0; }
+  .ico { background:transparent; color:var(--sub); padding:6px 10px; font-size:18px; }
+  .ico.on { color:var(--green); }
+  .form { max-width:460px; display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+  .form label { display:flex; align-items:center; gap:8px; }
+  .form label.fl { flex-direction:column; align-items:stretch; gap:6px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:var(--card); border-radius:500px; padding:6px 14px; font-size:14px; cursor:pointer; border:0; color:#fff; font-weight:600; }
+  .chip.sel { background:var(--green); color:#000; }
+  .tag { font-size:12px; border:1px solid #727272; border-radius:500px; padding:2px 8px; color:var(--sub); white-space:nowrap; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .card { background:var(--card); border-radius:8px; padding:12px; text-align:left; color:#fff; display:flex; flex-direction:column; gap:4px; font-weight:600; min-width:0; }
+  .card:hover { background:#2a2a2a; }
+  .card b, .card small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .card .cv { aspect-ratio:1; border-radius:6px; margin-bottom:6px; display:flex; align-items:center; justify-content:center;
+              font-size:38px; font-weight:800; color:#fff; background:linear-gradient(135deg,var(--green),#2b3a67); }
+  .cv.liked { background:linear-gradient(135deg,#5b4bff,#b9a7ff); }
+  .cv.rec { background:linear-gradient(135deg,#0d7377,#32e0c4); }
+  .quick { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-top:12px; }
+  .qt { display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.08); color:#fff; border-radius:6px; padding:0 12px 0 0;
+        height:56px; text-align:left; overflow:hidden; font-weight:700; }
+  .qt:hover { background:rgba(255,255,255,.16); }
+  .qt .pic { width:56px; height:56px; border-radius:0; font-size:20px; }
+  .qt span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row { display:flex; gap:6px; align-items:center; margin:2px 0; padding:6px 8px; border-radius:6px; }
   .row:hover { background:var(--card); }
   .row span { flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; }
-  .row button { padding:5px 12px; font-size:12px; background:transparent; color:#fff;
-         border:1px solid #727272; }
+  .row span.lnk { cursor:pointer; }
+  .row button { padding:7px 14px; font-size:13px; background:transparent; color:#fff; border:1px solid #727272; }
   .row button:first-of-type { background:var(--green); color:#000; border-color:var(--green); }
-  #reqOut .row button { background:transparent; color:#fff; border:1px solid #727272; }
-  #bar { position:fixed; left:0; right:0; bottom:0; height:84px; background:#000;
-         border-top:1px solid #222; padding:0 16px; display:flex; align-items:center;
-         justify-content:space-between; gap:12px; }
-  #barL, #barR { flex:1; }
-  #barR { text-align:right; }
-  #barC { display:flex; gap:10px; }
-  #cmsg { color:var(--sub); font-size:14px; }
-  .red { background:#e22134; color:#fff; }
-  .ghost { background:transparent; color:var(--sub); border:1px solid #727272; padding:8px 16px; }
-  @media (max-width:700px) {
-    .layout { flex-direction:column; height:auto; padding-bottom:100px; }
-    #side { width:100%; }
-    #status { font-size:24px; }
-  }
-
-  #main { display:flex; flex-direction:column; }
-  #tabs { display:flex; gap:8px; margin-bottom:16px; }
-  .tab { background:transparent; color:#fff; border:1px solid #727272; padding:8px 18px; }
-  .tab.on { background:var(--green); color:#000; border-color:var(--green); }
-  #callsPane { flex:1; }
-  #musicFrame { display:none; flex:1; width:100%; min-height:520px; border:0; border-radius:8px; background:#000; }
-
-  #main { background:linear-gradient(var(--tint,#2b3a67), var(--panel) 340px); }
-  #pbg { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:-1; display:none; }
-  body.hasbg #pbg { display:block; }
-  body.hasbg #side { background:rgba(18,18,18,.72); }
+  #reqOut .row button, #pfFriends .row button { background:transparent; color:#fff; border:1px solid #727272; }
+  .banner { height:160px; border-radius:12px; background:linear-gradient(135deg,var(--tint),#000) center/cover no-repeat; }
+  .pfhead { display:flex; align-items:flex-end; gap:16px; margin:-48px 16px 12px; position:relative; }
+  textarea { resize:vertical; }
+  input[type=color] { width:44px; height:34px; border:0; background:none; padding:0; cursor:pointer; vertical-align:middle; }
+  .eq { display:flex; gap:18px; }
+  .eqb { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .eqb input { writing-mode:vertical-lr; direction:rtl; height:120px; accent-color:var(--green); }
+  dialog { background:var(--panel); color:#fff; border:1px solid #333; border-radius:12px; padding:20px; min-width:280px; max-width:90vw; }
+  dialog::backdrop { background:rgba(0,0,0,.7); }
+  #toast { position:fixed; left:50%; bottom:130px; transform:translateX(-50%); background:#fff; color:#000; padding:10px 18px;
+           border-radius:500px; font-weight:700; display:none; z-index:30; max-width:90vw; text-align:center; }
+  #bg { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:-1; display:none; }
+  body.hasbg #bg { display:block; }
+  body.hasbg #nav, body.hasbg #wrap, body.hasbg #phoneTop { background:rgba(18,18,18,.72); }
   body.hasbg #main { background:transparent; }
-</style>
-</head><body>
+  body.hasbg #dock { background:rgba(0,0,0,.6); }
 
-<img id="pbg" alt=""><p id="loading">Loading...</p>
+  /* ---------- full-screen player ---------- */
+  #full { position:fixed; inset:0; z-index:20; background:linear-gradient(var(--tint),#000 70%); display:flex; flex-direction:column;
+          align-items:center; padding:calc(16px + var(--sat)) 20px calc(24px + var(--sab)); gap:10px; overflow:hidden; }
+  #full[hidden] { display:none; }
+  #fClose { align-self:flex-start; padding:6px 16px; }
+  #fLyr { position:absolute; top:calc(16px + var(--sat)); right:16px; }
+  #stage { position:relative; flex:1; min-height:0; aspect-ratio:1; max-width:100%; display:flex; align-items:center; justify-content:center; }
+  #viz { position:absolute; inset:0; width:100%; height:100%; }
+  #art { position:relative; width:54%; aspect-ratio:1; border-radius:50%; overflow:hidden; background:linear-gradient(135deg,#1db954,#2b3a67); transition:transform .08s; }
+  #art::after { content:"♪"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:48px; }
+  #cover { position:relative; z-index:1; width:100%; height:100%; object-fit:cover; visibility:hidden; }
+  #lyr { display:none; flex:1; min-height:0; width:100%; max-width:560px; overflow-y:auto; text-align:center; font-size:26px; font-weight:800; line-height:1.4; padding:30vh 0; }
+  #lyr p { margin:12px 0; color:#777; cursor:pointer; }
+  #lyr p.now { color:#fff; }
+  #lyr .dim { color:var(--sub); font-size:16px; font-weight:400; }
+  #full.lyrics #stage { display:none; }
+  #full.lyrics #lyr { display:block; }
+  .finfo { display:flex; align-items:center; gap:8px; width:100%; max-width:520px; }
+  .finfo > div { flex:1; min-width:0; }
+  #prog { width:100%; max-width:520px; height:56px; cursor:pointer; touch-action:none; }
+  .ftime { display:flex; justify-content:space-between; width:100%; max-width:520px; font-size:12px; color:var(--sub); }
+  .fctl { display:flex; gap:14px; align-items:center; }
+  #fPP { width:56px; height:56px; padding:0; font-size:20px; }
+
+  /* ---------- phones: bottom tab bar, compact player, no side panel ---------- */
+  @media (max-width:820px) {
+    #nav { display:none; }
+    #layout { padding:0; gap:0; }
+    #wrap { border-radius:0; }
+    #phoneTop { display:flex; }
+    #main { padding:12px 16px 20px; }
+    h2 { font-size:24px; }
+    #tabbar { display:flex; }
+    #bar { height:62px; padding:0 12px; gap:8px; }
+    #miniProg { display:block; }
+    #np { flex:1; width:auto; }
+    #seekrow { display:none; }
+    #ctl { flex:none; }
+    #ctl .btns { gap:4px; }
+    #ctl .btns button { width:44px; height:44px; padding:0; }
+    #toast { bottom:calc(150px + var(--sab)); }
+    .grid { grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); }
+    .quick { grid-template-columns:1fr 1fr; gap:8px; }
+    .qt { height:52px; font-size:13px; }
+    .qt .pic { width:52px; height:52px; }
+    dialog { margin:auto 0 0; width:100%; max-width:100%; border-radius:16px 16px 0 0; padding-bottom:calc(20px + var(--sab)); }
+    .song, .prow { padding:6px 4px; }
+    .ico { padding:8px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<img id="bg" alt="">
+<p id="loading">Loading...</p>
 
 <div id="loginBox" style="display:none">
-  <h3>Log in</h3>
-  <input id="email" type="email" placeholder="Email"><br>
-  <input id="pass" type="password" placeholder="Password"><br>
+  <h3 style="margin-top:0">Log in</h3>
+  <input id="email" type="email" placeholder="Email" autocomplete="email"><br>
+  <input id="pass" type="password" placeholder="Password" autocomplete="current-password"><br>
   <button onclick="login()">Log in</button>
   <button onclick="signup()">Sign up</button>
   <p id="msg"></p>
 </div>
 
 <div id="nameBox" style="display:none">
-  <h3>Pick a username</h3>
-  <input id="uname" placeholder="3-20 letters, numbers, _">
+  <h3 style="margin-top:0">Pick a username</h3>
+  <input id="uname" type="text" placeholder="3-20 letters, numbers, _">
   <button onclick="saveName()">Save</button>
   <p id="nmsg"></p>
 </div>
 
-<div id="appBox" style="display:none">
-  <div class="layout">
-    <div id="side">
-      <h4 style="margin-top:0">Add friend</h4>
-      <div class="row">
-        <input id="addName" placeholder="Username" style="flex:1;min-width:0">
-        <button onclick="addFriend()">Add</button>
-      </div>
-      <small id="fmsg"></small>
-      <h4>Requests</h4>
-      <div id="reqIn"></div>
-      <div id="reqOut"></div>
-      <h4>Friends</h4>
-      <div id="friendList"></div>
-    </div>
-    <div id="main"><div id="tabs"><button class="tab on" data-t="calls" onclick="tab('calls')">Calls</button><button class="tab" data-t="music" onclick="tab('music')">Music</button></div><div id="callsPane"><p id="status"></p>
-      <p class="hint">Pick a friend on the left and press Call.</p>
-      <audio id="out" autoplay></audio></div><iframe id="musicFrame" title="Music"></iframe></div>
-    <div id="bar">
-      <div id="barL"><span id="cmsg"></span></div>
-      <div id="barC">
-        <button id="muteBtn" onclick="toggleMute()">Mute</button>
-        <button class="red" onclick="hangup()">Hang up</button>
-      </div>
-      <div id="barR"><button class="ghost" onclick="logout()">Log out</button></div>
+<div id="appBox">
+  <div id="layout">
+    <nav id="nav" aria-label="Main menu">
+      <button class="nv prof" data-v="profile" id="navProf"><span class="av" id="navAv"></span><span id="navName"></span></button>
+      <div id="navMain"></div>
+      <h4>Your playlists</h4>
+      <div id="navLists"></div>
+      <div id="navBottom"></div>
+    </nav>
+    <div id="wrap">
+      <header id="phoneTop">
+        <button class="ib" id="ptBack" aria-label="Back" hidden>‹</button>
+        <button class="av" id="phAv" aria-label="Your profile"></button>
+        <span id="ptTitle"></span>
+        <button class="ib" id="ptSet" aria-label="Settings"></button>
+      </header>
+      <div id="main"></div>
     </div>
   </div>
+
+  <div id="dock">
+    <div id="callbar" role="status">
+      <span id="cmsg"></span>
+      <button id="muteBtn" onclick="toggleMute()">Mute</button>
+      <button class="red" onclick="hangup()">Hang up</button>
+    </div>
+    <div id="bar">
+      <div id="miniProg"></div>
+      <div id="np" role="button" tabindex="0" title="Open now playing"><b id="npT">Nothing playing</b><small id="npA"></small></div>
+      <div id="ctl">
+        <div class="btns">
+          <button class="ghost" id="prev" aria-label="Previous">⏮</button>
+          <button class="green" id="pp" aria-label="Play or pause">▶</button>
+          <button class="ghost" id="next" aria-label="Next">⏭</button>
+        </div>
+        <div id="seekrow"><span id="cur">0:00</span><input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Seek"><span id="dur">0:00</span></div>
+      </div>
+    </div>
+    <nav id="tabbar" aria-label="Sections"></nav>
+  </div>
 </div>
+
+<audio id="audio"></audio>
+<audio id="out" autoplay playsinline></audio>
+
+<div id="full" hidden>
+  <button class="ghost" id="fClose" aria-label="Close now playing">⌄ Close</button>
+  <button class="ghost" id="fLyr">Lyrics</button>
+  <div id="stage"><canvas id="viz"></canvas><div id="art"><img id="cover" alt="Album art"></div></div>
+  <div id="lyr"></div>
+  <div class="finfo">
+    <div><b id="fT"></b><br><small id="fA"></small></div>
+    <button class="ico" id="fLike" aria-label="Save to favorites">♥</button>
+    <button class="ico" id="fAdd" aria-label="Add to playlist">＋</button>
+    <button class="ico" id="editLyr" aria-label="Edit lyrics">✎</button>
+  </div>
+  <canvas id="prog"></canvas>
+  <div class="ftime"><span id="fCur">0:00</span><span id="fDur">0:00</span></div>
+  <div class="fctl">
+    <button class="ico" id="fShuf" aria-label="Shuffle">⇄</button>
+    <button class="ghost" id="fPrev" aria-label="Previous">⏮</button>
+    <button class="green" id="fPP" aria-label="Play or pause">▶</button>
+    <button class="ghost" id="fNext" aria-label="Next">⏭</button>
+    <button class="ico" id="fLoop" aria-label="Repeat this song">↻</button>
+  </div>
+</div>
+<dialog id="dlg"></dialog>
+<div id="toast" role="status"></div>
 
 <script>
 const sb = supabase.createClient(
@@ -126,26 +303,81 @@ const sb = supabase.createClient(
   'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT'
 );
 const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = t => isFinite(t) ? Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0') : '0:00';
+const isPhone = () => matchMedia('(max-width:820px)').matches;
 const PREFIX = 'skychaser-audio-';
 const pid = uid => PREFIX + uid;
-let localStream = null, muted = false;
-const mic = async () => {
-  if (!localStream) localStream = await navigator.mediaDevices.getUserMedia({audio: true});
-  localStream.getAudioTracks().forEach(t => t.enabled = !muted);
-  return localStream;
-};
-function toggleMute() {
-  muted = !muted;
-  if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !muted);
-  $('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2600);
 }
-let peer, me, current;
+
+/* ---------- icons ---------- */
+const IC = {
+  home: '<path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  library: '<path d="M4 4v16M9 4v16"/><path d="m14 5 6 14"/>',
+  create: '<path d="M12 5v14M5 12h14"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  friends: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.2.6 3.5 2.4 3.5 5"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>'
+};
+const svg = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
+const NAV = [['home','Home'],['search','Search'],['library','Library'],['create','Create'],['upload','Upload'],['friends','Friends & Calls']];
+const TABS = [['home','Home'],['search','Search'],['library','Library'],['create','Create'],['friends','Friends']];
+const TITLES = { home:'Home', search:'Search', library:'Your Library', create:'Create', upload:'Upload', friends:'Friends & Calls',
+  settings:'Settings', profile:'Your profile', userprofile:'Profile', playlist:'Playlist', liked:'Liked Songs', recent:'Recently Played' };
+const TABOF = { home:'home', search:'search', library:'library', playlist:'library', liked:'library', recent:'library',
+  create:'create', upload:'create', friends:'friends', userprofile:'friends' };
+const TOP = new Set(['home','search','library','friends']);
+
+/* ---------- state ---------- */
+let me = null, prof = {};
+let songs = [], favs = new Set(), recent = [], playlists = [], memberOf = new Set();
 let friends = [], incoming = [], outgoing = [];
+let view = 'home', viewArg = null, query = '', renderTok = 0;
+let lists = {}, queue = [], qi = -1, curId = null;
+let peer, current = null, peerReady = false, statusText = 'Connecting...';
+let localStream = null, muted = false;
+
+const canEdit = p => p.owner === me.id || (p.collaborative && memberOf.has(p.id));
+const mySongs = () => recent.map(id => songs.find(s => s.id === id)).filter(Boolean);
+const myPlaylists = () => playlists.filter(p => p.owner === me.id || memberOf.has(p.id));
 
 function show(box) {
   $('loading').style.display = 'none';
   for (const b of ['loginBox', 'nameBox', 'appBox'])
-    $(b).style.display = (b === box) ? 'block' : 'none';
+    $(b).style.display = (b === box) ? (b === 'appBox' ? 'flex' : 'block') : 'none';
+}
+
+/* ---------- signed urls and avatars ---------- */
+const urlCache = new Map();
+async function signed(bucket, path) {
+  if (!path) return null;
+  const k = bucket + '/' + path, c = urlCache.get(k);
+  if (c && c.exp > Date.now()) return c.url;
+  const { data } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
+  if (!data) return null;
+  urlCache.set(k, { url: data.signedUrl, exp: Date.now() + 50 * 60 * 1000 });
+  return data.signedUrl;
+}
+async function paintAv(el, p) {
+  if (!el) return;
+  el.textContent = ((p && p.username) || '?')[0].toUpperCase();
+  el.style.backgroundImage = '';
+  const u = await signed('avatars', p && p.avatar_path);
+  if (u) { el.style.backgroundImage = `url("${u}")`; el.textContent = ''; }
+}
+async function paintBanner(el, p) {
+  if (!el) return;
+  const u = await signed('backdrops', p && p.backdrop_path);
+  if (u) el.style.backgroundImage = `url("${u}")`;
+}
+function paintMe() {
+  paintAv($('navAv'), { ...prof, username: me.username });
+  paintAv($('phAv'), { ...prof, username: me.username });
 }
 
 /* ---------- login ---------- */
@@ -153,20 +385,15 @@ async function login() {
   if (!$('email').value || !$('pass').value) {
     $('msg').textContent = 'Enter your email and password first.'; return;
   }
-  const { error } = await sb.auth.signInWithPassword({
-    email: $('email').value, password: $('pass').value
-  });
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value, password: $('pass').value });
   if (error) $('msg').textContent = error.message; else start();
 }
 async function signup() {
   if (!$('email').value || !$('pass').value) {
     $('msg').textContent = 'Enter your email and password first.'; return;
   }
-  const { error } = await sb.auth.signUp({
-    email: $('email').value, password: $('pass').value
-  });
-  $('msg').textContent = error ? error.message
-    : 'Account created. Confirm your email if asked, then log in.';
+  const { error } = await sb.auth.signUp({ email: $('email').value, password: $('pass').value });
+  $('msg').textContent = error ? error.message : 'Account created. Confirm your email if asked, then log in.';
 }
 async function logout() { await sb.auth.signOut(); location.reload(); }
 
@@ -174,68 +401,131 @@ async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) return show('loginBox');
   me = data.session.user;
-  const { data: prof } = await sb.from('profiles')
-    .select('username').eq('id', me.id).maybeSingle();
-  if (!prof) return show('nameBox');
-  me.username = prof.username;
+  const { data: p } = await sb.from('profiles')
+    .select('username,bio,avatar_path,backdrop_path,fav_songs').eq('id', me.id).maybeSingle();
+  if (!p) return show('nameBox');
+  prof = p; me.username = p.username;
   openApp();
 }
 async function saveName() {
   const name = $('uname').value.trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(name)) {
-    $('nmsg').textContent = 'Use 3-20 letters, numbers, or underscores.'; return;
-  }
+  if (!/^[a-z0-9_]{3,20}$/.test(name)) { $('nmsg').textContent = 'Use 3-20 letters, numbers, or underscores.'; return; }
   const { error } = await sb.from('profiles').insert({ id: me.id, username: name });
   if (error) {
-    $('nmsg').textContent = error.code === '23505'
-      ? 'That username is taken, try another.' : error.message;
+    $('nmsg').textContent = error.code === '23505' ? 'That username is taken, try another.' : error.message;
     return;
   }
+  prof = { username: name, bio: null, avatar_path: null, backdrop_path: null, fav_songs: [] };
   me.username = name;
   openApp();
 }
 
-/* ---------- friends ---------- */
-function row(text, buttons) {
-  const d = document.createElement('div');
-  d.className = 'row';
-  const s = document.createElement('span');
-  s.textContent = text;
-  d.appendChild(s);
-  for (const [label, fn] of buttons) {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.onclick = fn;
-    d.appendChild(b);
-  }
-  return d;
+/* ---------- app start ---------- */
+async function openApp() {
+  show('appBox');
+  buildChrome();
+  $('main').innerHTML = '<p class="sub">Loading…</p>';
+  initPeer();
+  await Promise.all([loadSongs(), loadFavs(), loadRecent(), refreshFriends(), loadPlaylists()]);
+  history.replaceState({ v: 'home', arg: null }, '');
+  go('home', null, true);   // the app always opens on Home, even after a refresh
+  setInterval(refreshFriends, 10000);
 }
-function fill(id, items, make, emptyText) {
-  const el = $(id);
-  el.replaceChildren();
-  if (!items.length && emptyText) {
-    const p = document.createElement('small');
-    p.textContent = emptyText;
-    el.appendChild(p);
-  }
-  items.forEach(i => el.appendChild(make(i)));
+function buildChrome() {
+  $('navName').textContent = '@' + me.username;
+  paintMe();
+  $('navMain').innerHTML = NAV.map(([v, l]) =>
+    `<button class="nv" data-v="${v}">${svg(v)}<span>${l}</span>${v === 'friends' ? '<span class="badge" id="bdgNav" hidden></span>' : ''}</button>`).join('');
+  $('navBottom').innerHTML = `<button class="nv" data-v="settings">${svg('settings')}<span>Settings</span></button>`;
+  $('tabbar').innerHTML = TABS.map(([v, l]) =>
+    `<button class="tb" data-v="${v}">${svg(v)}<span>${l}</span>${v === 'friends' ? '<span class="badge" id="bdgTab" hidden></span>' : ''}</button>`).join('');
+  $('ptSet').innerHTML = svg('settings');
 }
-function render() {
-  fill('reqIn', incoming, i => row('@' + i.username,
-    [['Accept', () => respond(i.rid, true)], ['Decline', () => respond(i.rid, false)]]),
-    'No requests');
-  fill('reqOut', outgoing, i => row('@' + i.username + ' (pending)',
-    [['Cancel', () => removeRow(i.rid)]]), '');
-  fill('friendList', friends, i => row('@' + i.username,
-    [['Call', () => callFriend(i)], ['Remove', () => removeRow(i.rid)]]),
-    'No friends yet');
+
+/* ---------- navigation ---------- */
+function go(v, arg, noPush) {
+  view = v; viewArg = arg || null;
+  if (!noPush) history.pushState({ v, arg: viewArg }, '');
+  render();
 }
-async function refresh() {
-  const { data: rows, error } = await sb.from('friend_requests')
-    .select('id,sender,receiver,status');
+function navTo(v, arg) {
+  if (v === 'create' && isPhone()) return openCreateSheet();
+  if (v === 'search') query = '';
+  go(v, arg);
+}
+function openCreateSheet() {
+  const d = $('dlg');
+  d.innerHTML = `<h3 style="margin-top:0">Create</h3>
+    <p><button class="green" id="shPl" style="width:100%;padding:14px">New playlist</button></p>
+    <p><button class="ghost" id="shUp" style="width:100%;padding:14px">Upload a song</button></p>
+    <p><button class="ghost" id="shX" style="width:100%;border:0">Cancel</button></p>`;
+  $('shPl').onclick = () => { d.close(); go('create'); };
+  $('shUp').onclick = () => { d.close(); go('upload'); };
+  $('shX').onclick = () => d.close();
+  d.showModal();
+}
+$('nav').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) navTo(b.dataset.v, b.dataset.arg); });
+$('tabbar').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) navTo(b.dataset.v, b.dataset.arg); });
+$('phAv').onclick = () => go('profile');
+$('ptSet').onclick = () => go('settings');
+$('ptBack').onclick = () => history.back();
+window.addEventListener('popstate', e => {
+  const st = e.state || {}, wasFull = !$('full').hidden;
+  if (!st.full) $('full').hidden = true;
+  if (st.v && !(wasFull && !st.full)) { view = st.v; viewArg = st.arg || null; render(); }
+});
+
+function markNav() {
+  const key = view === 'playlist' ? 'pl:' + viewArg : view;
+  document.querySelectorAll('#nav [data-v]').forEach(b => {
+    const k = b.dataset.v === 'playlist' ? 'pl:' + b.dataset.arg : b.dataset.v;
+    b.classList.toggle('on', k === key);
+  });
+  const tab = TABOF[view] || null;
+  document.querySelectorAll('#tabbar [data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === tab));
+  $('ptTitle').textContent = TITLES[view] || '';
+  $('ptBack').hidden = TOP.has(view);
+  $('phAv').style.display = TOP.has(view) ? '' : 'none';
+}
+function renderNavLists() {
+  const pl = myPlaylists();
+  $('navLists').innerHTML =
+    `<button class="nv pli" data-v="liked"><span class="pic liked">♥</span><span class="pn">Liked Songs</span></button>` +
+    `<button class="nv pli" data-v="recent"><span class="pic rec">↺</span><span class="pn">Recently Played</span></button>` +
+    pl.map(p => `<button class="nv pli" data-v="playlist" data-arg="${p.id}"><span class="pic">${esc((p.name || '?')[0].toUpperCase())}</span><span class="pn">${esc(p.name)}</span></button>`).join('');
+}
+function updateBadges() {
+  const n = incoming.length;
+  ['bdgNav', 'bdgTab'].forEach(id => { const el = $(id); if (el) { el.hidden = !n; el.textContent = n; } });
+}
+
+/* ---------- data ---------- */
+async function loadSongs() {
+  const { data, error } = await sb.from('songs').select('id,title,artist,storage_path,owner,cover_path,lyrics').order('created_at', { ascending: false });
+  if (error) return toast(error.message);
+  songs = data;
+}
+async function loadFavs() {
+  const { data } = await sb.from('favorites').select('song_id');
+  favs = new Set((data || []).map(r => r.song_id));
+}
+async function loadRecent() {
+  const { data } = await sb.from('recently_played').select('song_id').order('played_at', { ascending: false }).limit(50);
+  recent = (data || []).map(r => r.song_id);
+}
+async function loadPlaylists() {
+  const { data, error } = await sb.from('playlists')
+    .select('id,name,is_public,collaborative,owner,profiles!playlists_owner_fkey(username)')
+    .order('created_at', { ascending: false });
+  if (error) toast(error.message);
+  playlists = data || [];
+  const { data: m } = await sb.from('playlist_members').select('playlist_id').eq('user_id', me.id);
+  memberOf = new Set((m || []).map(r => r.playlist_id));
+}
+async function refreshFriends() {
+  const { data: rows, error } = await sb.from('friend_requests').select('id,sender,receiver,status');
   if (error || !rows) return;
-  const ids = [...new Set(rows.flatMap(r => [r.sender, r.receiver]))]
-    .filter(i => i !== me.id);
+  const ids = [...new Set(rows.flatMap(r => [r.sender, r.receiver]))].filter(i => i !== me.id);
   const names = {};
   if (ids.length) {
     const { data: ps } = await sb.from('profiles').select('id,username').in('id', ids);
@@ -249,85 +539,733 @@ async function refresh() {
     else if (r.receiver === me.id) incoming.push(item);
     else outgoing.push(item);
   }
-  render();
+  updateBadges();
+  if (view === 'friends') renderFriendLists();
+}
+
+/* ---------- list helpers ---------- */
+const head = (title, subtitle) => `<h2>${esc(title)}</h2><p class="sub">${esc(subtitle || '')}</p>`;
+const empty = msg => `<p class="sub" style="margin-top:16px">${msg}</p>`;
+function songRows(list, key, extra) {
+  lists[key] = list;
+  return list.map((s, i) => `
+    <div class="song ${s.id === curId ? 'cur' : ''}" data-l="${key}" data-i="${i}" data-sid="${s.id}">
+      <button class="pl" data-act="play" aria-label="Play ${esc(s.title)}">▶</button>
+      <div class="t" data-act="play"><b>${esc(s.title)}</b><small>${esc(s.artist)}</small></div>
+      <button class="ico ${favs.has(s.id) ? 'on' : ''}" data-act="fav" aria-label="Save to favorites">♥</button>
+      <button class="ico" data-act="add" aria-label="Add to playlist">＋</button>
+      ${extra ? extra(s) : ''}
+    </div>`).join('');
+}
+const playlistCard = p => `
+  <button class="card" data-act="open" data-id="${p.id}">
+    <div class="cv">${esc((p.name || '?')[0].toUpperCase())}</div>
+    <b>${esc(p.name)}</b><small>by ${esc(p.profiles?.username || 'unknown')}</small>
+  </button>`;
+const playlistRow = p => `
+  <div class="prow" data-act="open" data-id="${p.id}">
+    <span class="pic">${esc((p.name || '?')[0].toUpperCase())}</span>
+    <div class="t"><b>${esc(p.name)}</b><small>by ${esc(p.profiles?.username || 'unknown')}</small></div>
+    <span class="tag">${p.is_public ? 'Public' : 'Private'}</span>
+    ${p.collaborative ? '<span class="tag">Co-op</span>' : ''}
+  </div>`;
+function row(text, buttons, onText) {
+  const d = document.createElement('div'); d.className = 'row';
+  const s = document.createElement('span'); s.textContent = text;
+  if (onText) { s.className = 'lnk'; s.onclick = onText; }
+  d.appendChild(s);
+  for (const [label, fn] of buttons) { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; d.appendChild(b); }
+  return d;
+}
+function fill(id, items, make, emptyText) {
+  const el = $(id); if (!el) return;
+  el.replaceChildren();
+  if (!items.length && emptyText) { const p = document.createElement('small'); p.textContent = emptyText; el.appendChild(p); }
+  items.forEach(i => el.appendChild(make(i)));
+}
+
+/* ---------- views ---------- */
+async function render(keep) {
+  const tok = ++renderTok, m = $('main'), st = m.scrollTop;
+  if (!keep) m.scrollTop = 0;
+  renderNavLists(); markNav();
+  lists = {};
+  const [html, after] = await build(view);
+  if (tok !== renderTok) return;
+  m.innerHTML = html;
+  if (keep) m.scrollTop = st;
+  if (after) after();
+}
+
+async function build(v) {
+  if (v === 'home') {
+    const hr = new Date().getHours(), greet = hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+    const mine = myPlaylists(), others = playlists.filter(p => p.is_public && !mine.includes(p)), rec = mySongs().slice(0, 5);
+    const tile = (cls, glyph, label, attrs) => `<button class="qt" ${attrs}><span class="pic ${cls}">${glyph}</span><span>${esc(label)}</span></button>`;
+    return [
+      head(greet, '@' + me.username) +
+      '<div class="quick">' +
+        tile('liked', '♥', 'Liked Songs', 'data-act="nav" data-v="liked"') +
+        tile('rec', '↺', 'Recently Played', 'data-act="nav" data-v="recent"') +
+        mine.slice(0, 4).map(p => tile('', esc((p.name || '?')[0].toUpperCase()), p.name, `data-act="open" data-id="${p.id}"`)).join('') +
+      '</div>' +
+      '<h3>Recently played</h3>' + (rec.length ? songRows(rec, 'recent') : empty('Play something and it will show up here.')) +
+      '<h3>Your playlists</h3>' + (mine.length ? '<div class="grid">' + mine.map(playlistCard).join('') + '</div>' : empty('No playlists yet. Make one in the Create tab.')) +
+      (others.length ? '<h3>Public playlists</h3><div class="grid">' + others.map(playlistCard).join('') + '</div>' : '')
+    ];
+  }
+
+  if (v === 'search') {
+    return [head('Search', 'Songs and artists') +
+      `<input type="search" id="q" value="${esc(query)}" placeholder="What do you want to listen to?" aria-label="Search songs and artists" enterkeyhint="search">` +
+      '<div id="results"></div>',
+      () => { renderResults(); if (!isPhone()) $('q').focus(); }];
+  }
+
+  if (v === 'library') {
+    const created = playlists.filter(p => p.owner === me.id), co = playlists.filter(p => p.owner !== me.id && memberOf.has(p.id));
+    return [head('Your Library', created.length + co.length + ' playlists') +
+      `<div class="prow" data-act="nav" data-v="liked"><span class="pic liked">♥</span><div class="t"><b>Liked Songs</b><small>${favs.size} songs</small></div></div>` +
+      '<h3>Created by you</h3>' + (created.length ? created.map(playlistRow).join('') : empty('You have not created a playlist yet.')) +
+      '<h3>Co-owned with you</h3>' + (co.length ? co.map(playlistRow).join('') : empty('Playlists friends invite you to will show up here.')) +
+      '<p><button class="green" data-act="nav" data-v="create" style="margin-top:16px">New playlist</button></p>'];
+  }
+
+  if (v === 'create') {
+    return [head('Create', 'Start a new playlist') +
+      `<div class="form">
+         <input type="text" id="plName" maxlength="100" placeholder="Playlist name">
+         <label><input type="radio" name="vis" value="private" checked> Private (only you and people you invite)</label>
+         <label><input type="radio" name="vis" value="public"> Public (any logged-in user can see it)</label>
+         <label><input type="checkbox" id="plColl"> Co-op: invited friends can add and remove songs</label>
+         <div><small>Invite friends</small>
+           <div class="chips" style="margin-top:6px">${friends.length ? friends.map(f => `<label class="chip"><input type="checkbox" class="inv" value="${f.id}"> ${esc(f.username)}</label>`).join('') : '<small>No friends yet. Add some in Friends &amp; Calls.</small>'}</div>
+         </div>
+         <button class="green" data-act="create" style="align-self:flex-start">Create playlist</button>
+       </div>`];
+  }
+
+  if (v === 'upload') {
+    return [head('Upload', 'MP3, M4A, AAC, OGG, WAV, FLAC or WebM, up to 50 MB') +
+      `<div class="form">
+         <input type="text" id="upTitle" maxlength="200" placeholder="Song title">
+         <input type="text" id="upArtist" maxlength="200" placeholder="Artist">
+         <input type="file" id="upFile" accept="audio/*">
+         <small>Album art (optional, up to 5 MB)</small>
+         <input type="file" id="upCover" accept="image/*">
+         <textarea id="upLyrics" rows="5" placeholder="Lyrics (optional). Plain text, or timed lines like [01:23.50] words"></textarea>
+         <button class="green" id="upBtn" data-act="upload" style="align-self:flex-start">Upload song</button>
+       </div>`];
+  }
+
+  if (v === 'friends') {
+    return [head('Friends & Calls', '') +
+      `<p id="status" class="sub" style="margin-top:0">${esc(statusText)}</p>
+       <h4>Add friend</h4>
+       <div class="row"><input type="text" id="addName" placeholder="Username" style="flex:1;min-width:0" autocapitalize="none" autocorrect="off"><button onclick="addFriend()">Add</button></div>
+       <small id="fmsg"></small>
+       <h4>Requests</h4><div id="reqIn"></div><div id="reqOut"></div>
+       <h4>Friends</h4><div id="friendList"></div>`,
+      renderFriendLists];
+  }
+
+  if (v === 'settings') {
+    return [settingsHtml() +
+      `<h3>Account</h3><p class="sub">Signed in as @${esc(me.username)}</p><button class="ghost" data-act="logout">Log out</button>`];
+  }
+
+  if (v === 'liked') {
+    const list = songs.filter(s => favs.has(s.id));
+    return [head('Liked Songs', list.length + ' songs') +
+      (list.length ? `<p><button class="green" data-act="playall" data-l="liked">▶ Play</button></p>` + songRows(list, 'liked')
+                   : empty('Tap the heart on any song to save it here.'))];
+  }
+
+  if (v === 'recent') {
+    const list = mySongs();
+    return [head('Recently Played', list.length + ' songs') +
+      (list.length ? `<p><button class="green" data-act="playall" data-l="recent">▶ Play</button> <button class="ghost" data-act="clearrecent">Clear history</button></p>` + songRows(list, 'recent')
+                   : empty('Nothing yet. Songs you play show up here.'))];
+  }
+
+  if (v === 'playlist') return buildPlaylist(viewArg);
+  if (v === 'profile') return buildProfile();
+  if (v === 'userprofile') return buildUserProfile(viewArg);
+  return ['', null];
+}
+
+/* ---- search ---- */
+function renderResults() {
+  const el = $('results'); if (!el) return;
+  const k = query.toLowerCase();
+  if (!k) {
+    el.innerHTML = '<h3>All songs</h3>' + (songs.length ? songRows(songs, 'all') : empty('No songs yet. Add audio files in the Upload tab.'));
+    return;
+  }
+  const hits = songs.filter(s => s.title.toLowerCase().includes(k) || s.artist.toLowerCase().includes(k));
+  const artists = {};
+  songs.filter(s => s.artist.toLowerCase().includes(k)).forEach(s => artists[s.artist] = (artists[s.artist] || 0) + 1);
+  let html = `<p class="sub" style="margin:12px 0 0">${hits.length} songs for “${esc(query)}”</p>`;
+  const names = Object.keys(artists);
+  if (names.length) html += '<h3>Artists</h3><div class="chips">' +
+    names.map(a => `<button class="chip" data-act="artist" data-name="${esc(a)}">${esc(a)} · ${artists[a]}</button>`).join('') + '</div>';
+  html += '<h3>Songs</h3>' + (hits.length ? songRows(hits, 'res') : empty('No songs or artists match that search.'));
+  el.innerHTML = html;
+}
+
+/* ---- playlist detail ---- */
+async function buildPlaylist(id) {
+  const p = playlists.find(x => x.id === id);
+  if (!p) { setTimeout(() => go('library', null, true), 0); return ['', null]; }
+  const [{ data: ps }, { data: mem }] = await Promise.all([
+    sb.from('playlist_songs').select('song_id,songs(id,title,artist,storage_path,owner,cover_path,lyrics)').eq('playlist_id', id),
+    sb.from('playlist_members').select('user_id,profiles(username)').eq('playlist_id', id)
+  ]);
+  const list = (ps || []).map(r => r.songs).filter(Boolean);
+  const editable = canEdit(p), isOwner = p.owner === me.id;
+  const memberIds = new Set((mem || []).map(r => r.user_id));
+  const invitable = friends.filter(f => !memberIds.has(f.id) && f.id !== p.owner);
+  let html = head(p.name, 'by ' + (p.profiles?.username || 'unknown'));
+  html += `<p><span class="tag">${p.is_public ? 'Public' : 'Private'}</span> ${p.collaborative ? '<span class="tag">Co-op</span>' : ''}</p>`;
+  if (list.length) html += `<p><button class="green" data-act="playall" data-l="pl">▶ Play</button></p>`;
+  if (isOwner) {
+    html += `<div class="form" style="margin:8px 0 0">
+      <label><input type="checkbox" id="tgPub" ${p.is_public ? 'checked' : ''}> Public</label>
+      <label><input type="checkbox" id="tgColl" ${p.collaborative ? 'checked' : ''}> Co-op: members can add and remove songs</label>
+      <button class="ghost" data-act="delpl" style="align-self:flex-start">Delete playlist</button></div>`;
+  }
+  html += '<h3>Songs</h3>' + (list.length
+    ? songRows(list, 'pl', editable ? () => `<button class="ico" data-act="rm" aria-label="Remove from playlist">✕</button>` : null)
+    : empty(editable ? 'Empty for now. Use ＋ on any song to add it.' : 'No songs in this playlist yet.'));
+  html += '<h3>Members</h3><div class="chips">' +
+    ((mem || []).length ? mem.map(r => `<span class="chip">${esc(r.profiles?.username || 'user')}${isOwner ? ` <a href="#" data-act="kick" data-uid="${r.user_id}" style="color:#f15e6c">remove</a>` : ''}</span>`).join('') : '<small>Just the owner.</small>') + '</div>';
+  if (isOwner && invitable.length) html += '<h3>Invite a friend</h3><div class="chips">' +
+    invitable.map(f => `<button class="chip" data-act="invite" data-uid="${f.id}">+ ${esc(f.username)}</button>`).join('') + '</div>';
+  return [html, null];
+}
+
+/* ---- profiles ---- */
+let pfFav = [], pfRmAv = false, pfRmBd = false;
+function buildProfile() {
+  pfFav = (prof.fav_songs || []).slice(); pfRmAv = false; pfRmBd = false;
+  return [`<div class="banner" id="pfBanner"></div>
+    <div class="pfhead"><div class="av big" id="pfAvatar"></div><div><h2 style="margin:0">@${esc(me.username)}</h2><small>${friends.length} friends</small></div></div>
+    <div class="form">
+      <label class="fl">Profile picture<input type="file" id="pfAv" accept="image/*"></label>
+      <button class="ghost" data-act="pfrmav" style="align-self:flex-start">Remove picture</button>
+      <label class="fl">Backdrop (only you and your friends can see it, GIFs work)<input type="file" id="pfBd" accept="image/*,.gif"></label>
+      <button class="ghost" data-act="pfrmbd" style="align-self:flex-start">Remove backdrop</button>
+      <label class="fl">Bio<textarea id="pfBio" rows="4" maxlength="300">${esc(prof.bio || '')}</textarea><small id="bioCount">${(prof.bio || '').length}/300</small></label>
+      <div><small>Favorite songs (up to 5)</small><div class="chips" id="pfFavs" style="margin:6px 0"></div>
+        <div style="display:flex;gap:8px"><select id="pfPick"></select><button class="ghost" data-act="pfadd">Add</button></div></div>
+      <button class="green" id="pfSave" data-act="pfsave" style="align-self:flex-start">Save profile</button>
+    </div>
+    <h3>Friends</h3><div id="pfFriends"></div>`,
+    () => {
+      paintAv($('pfAvatar'), { ...prof, username: me.username }); paintBanner($('pfBanner'), prof);
+      renderPfFavs();
+      fill('pfFriends', friends, f => row('@' + f.username, [['View', () => go('userprofile', f.id)]], () => go('userprofile', f.id)), 'No friends yet');
+    }];
+}
+function renderPfFavs() {
+  const box = $('pfFavs'); if (!box) return;
+  box.innerHTML = pfFav.length ? pfFav.map(id => {
+    const s = songs.find(x => x.id === id);
+    return `<span class="chip">${esc(s ? s.title : 'Unknown song')} <a href="#" data-act="pfrm" data-sid="${id}" style="color:#f15e6c">✕</a></span>`;
+  }).join('') : '<small>None picked yet.</small>';
+  const left = songs.filter(s => !pfFav.includes(s.id));
+  $('pfPick').innerHTML = left.length ? left.map(s => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)}</option>`).join('') : '<option value="">No more songs</option>';
+}
+async function saveProfile() {
+  const btn = $('pfSave'); btn.disabled = true; btn.textContent = 'Saving…';
+  const done = msg => { btn.disabled = false; btn.textContent = 'Save profile'; if (msg) toast(msg); };
+  try {
+    const patch = { bio: $('pfBio').value.trim() || null, fav_songs: pfFav };
+    const oldAv = prof.avatar_path, oldBd = prof.backdrop_path, drop = [];
+    const upload = async (bucket, file, limit) => {
+      if (!file.type.startsWith('image/')) throw new Error('That file is not an image.');
+      if (file.size > limit) throw new Error('That picture is too big (limit ' + (limit / 1048576) + ' MB).');
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
+      const { error } = await sb.storage.from(bucket).upload(path, file, { contentType: file.type });
+      if (error) throw error;
+      return path;
+    };
+    const avF = $('pfAv').files[0], bdF = $('pfBd').files[0];
+    if (avF) { patch.avatar_path = await upload('avatars', avF, 5242880); if (oldAv) drop.push(['avatars', oldAv]); }
+    else if (pfRmAv && oldAv) { patch.avatar_path = null; drop.push(['avatars', oldAv]); }
+    if (bdF) { patch.backdrop_path = await upload('backdrops', bdF, 8388608); if (oldBd) drop.push(['backdrops', oldBd]); }
+    else if (pfRmBd && oldBd) { patch.backdrop_path = null; drop.push(['backdrops', oldBd]); }
+    const { error } = await sb.from('profiles').update(patch).eq('id', me.id);
+    if (error) throw error;
+    for (const [b, p] of drop) sb.storage.from(b).remove([p]);
+    Object.assign(prof, patch); paintMe();
+    done('Profile saved'); render(true);
+  } catch (e) { done(e.message || 'Could not save'); }
+}
+async function buildUserProfile(id) {
+  const { data: p } = await sb.from('profiles').select('id,username,bio,avatar_path,backdrop_path,fav_songs').eq('id', id).maybeSingle();
+  if (!p) return [head('Profile', '') + empty('This profile could not be loaded.')];
+  const favList = (p.fav_songs || []).map(x => songs.find(s => s.id === x)).filter(Boolean);
+  const isFriend = friends.some(f => f.id === p.id);
+  return [`<div class="banner" id="ubBanner"></div>
+    <div class="pfhead"><div class="av big" id="ubAvatar"></div><div><h2 style="margin:0">@${esc(p.username)}</h2></div></div>
+    ${isFriend ? `<p><button class="green" data-act="callfriend" data-uid="${p.id}" data-name="${esc(p.username)}">Call</button></p>` : ''}
+    ${p.bio ? `<p style="white-space:pre-wrap">${esc(p.bio)}</p>` : '<p class="sub">No bio yet.</p>'}
+    <h3>Favorite songs</h3>` + (favList.length ? songRows(favList, 'ufav') : empty('No favorite songs picked.')),
+    () => { paintAv($('ubAvatar'), p); paintBanner($('ubBanner'), p); }];
+}
+
+/* ---------- friends ---------- */
+function renderFriendLists() {
+  const statusEl = $('status'); if (statusEl) statusEl.textContent = statusText;
+  const open = i => () => go('userprofile', i.id);
+  fill('reqIn', incoming, i => row('@' + i.username, [['Accept', () => respond(i.rid, true)], ['Decline', () => respond(i.rid, false)]], open(i)), 'No requests');
+  fill('reqOut', outgoing, i => row('@' + i.username + ' (pending)', [['Cancel', () => removeRow(i.rid)]]), '');
+  fill('friendList', friends, i => row('@' + i.username, [['Call', () => callFriend(i)], ['Remove', () => removeRow(i.rid)]], open(i)), 'No friends yet');
 }
 async function addFriend() {
   const name = $('addName').value.trim().toLowerCase().replace(/^@/, '');
   if (!name) return;
   if (name === me.username) { $('fmsg').textContent = "That's you."; return; }
-  const { data: p } = await sb.from('profiles')
-    .select('id').eq('username', name).maybeSingle();
+  const { data: p } = await sb.from('profiles').select('id').eq('username', name).maybeSingle();
   if (!p) { $('fmsg').textContent = 'No user with that username.'; return; }
-  const { error } = await sb.from('friend_requests')
-    .insert({ sender: me.id, receiver: p.id, status: 'pending' });
-  $('fmsg').textContent = error
-    ? (error.code === '23505' ? 'Already requested, or already friends.' : error.message)
-    : 'Request sent.';
+  const { error } = await sb.from('friend_requests').insert({ sender: me.id, receiver: p.id, status: 'pending' });
+  $('fmsg').textContent = error ? (error.code === '23505' ? 'Already requested, or already friends.' : error.message) : 'Request sent.';
   if (!error) $('addName').value = '';
-  refresh();
+  refreshFriends();
 }
 async function respond(rid, accept) {
   if (accept) await sb.from('friend_requests').update({ status: 'accepted' }).eq('id', rid);
   else await sb.from('friend_requests').delete().eq('id', rid);
-  refresh();
+  refreshFriends();
 }
-async function removeRow(rid) {
-  await sb.from('friend_requests').delete().eq('id', rid);
-  refresh();
-}
+async function removeRow(rid) { await sb.from('friend_requests').delete().eq('id', rid); refreshFriends(); }
 
-/* ---------- calls ---------- */
+/* ---------- calls (the call bar only shows while a call is active) ---------- */
+const mic = async () => {
+  if (!localStream) localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+  return localStream;
+};
+function toggleMute() {
+  muted = !muted;
+  if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+  $('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+}
+function setStatus(t) { statusText = t; const el = $('status'); if (el) el.textContent = t; }
+function callbar(msg) {
+  $('cmsg').textContent = msg || '';
+  $('callbar').classList.toggle('on', !!msg);
+  $('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+}
+function endCall() {
+  current = null; muted = false; callbar('');
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+}
 function setCall(c, who) {
-  current = c;
-  $('cmsg').textContent = 'On a call with @' + who;
+  current = c; callbar('On a call with @' + who);
   c.on('stream', s => $('out').srcObject = s);
-  c.on('close', () => {
-    $('cmsg').textContent = 'Call ended.';
-    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-  });
+  const end = () => { if (current === c) { endCall(); toast('Call ended'); } };
+  c.on('close', end); c.on('error', end);
 }
 async function callFriend(f) {
-  $('cmsg').textContent = 'Calling @' + f.username + '...';
-  setCall(peer.call(pid(f.id), await mic()), f.username);
+  if (current) return toast('You are already on a call');
+  if (!peerReady) return toast('Still connecting, try again in a moment');
+  callbar('Calling @' + f.username + '...');
+  try { setCall(peer.call(pid(f.id), await mic()), f.username); }
+  catch (e) { endCall(); toast('Could not start the call. Check your microphone permission.'); }
 }
 function hangup() { if (current) current.close(); }
-
-async function openApp() {
-  show('appBox'); $('musicFrame').src = 'music.html';
-  $('status').textContent = 'Connecting...';
-  await refresh();
-  setInterval(refresh, 10000);
+function initPeer() {
   peer = new Peer(pid(me.id));
-  peer.on('open', () => $('status').textContent = 'Ready: @' + me.username);
-  peer.on('error', e => $('status').textContent = 'Error: ' + e.type);
+  peer.on('open', () => { peerReady = true; setStatus('Ready: @' + me.username); });
+  peer.on('error', e => setStatus('Error: ' + e.type));
   peer.on('call', async c => {
     const f = friends.find(x => pid(x.id) === c.peer);
-    if (!f) { c.close(); return; }
-    c.answer(await mic());
+    if (!f || current) { c.close(); return; }
+    try { c.answer(await mic()); } catch (e) { c.close(); return toast('Incoming call blocked: microphone not allowed'); }
     setCall(c, f.username);
   });
 }
 
-function tab(t) {
-  const music = t === 'music';
-  $('callsPane').style.display = music ? 'none' : 'block';
-  $('musicFrame').style.display = music ? 'block' : 'none';
-  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+/* ---------- player ---------- */
+const audio = $('audio');
+audio.crossOrigin = 'anonymous';
+let shuffleOn = false;
+async function playIndex(i) {
+  const s = queue[i]; if (!s) return;
+  qi = i; curId = s.id;
+  const { data, error } = await sb.storage.from('songs').createSignedUrl(s.storage_path, 3600);
+  if (error) return toast('Could not load this song: ' + error.message);
+  ensureGraph();
+  audio.src = data.signedUrl;
+  audio.play().catch(() => toast('Tap play to start'));
+  $('npT').textContent = s.title; $('npA').textContent = s.artist;
+  setNowPlaying(s); recordPlay(s);
+  document.querySelectorAll('.song').forEach(el => el.classList.toggle('cur', el.dataset.sid === curId));
 }
-const PTH = {green:['#1db954','#1d3a2a'],blue:['#3b82f6','#1b2f5a'],purple:['#a855f7','#3a1f5c'],pink:['#ec4899','#5c1f3f'],orange:['#f97316','#5c3216'],red:['#ef4444','#5c1f1f'],teal:['#14b8a6','#154a46'],gold:['#eab308','#514514']};
-async function applyMusicUI() {
-  try {
-    const st = JSON.parse(localStorage.getItem('musicSettings') || '{}'), t = PTH[st.theme] || PTH.green, r = document.documentElement.style;
-    r.setProperty('--green', t[0]); r.setProperty('--tint', t[1]);
-  } catch (e) {}
-  try {
-    const db = await new Promise((res, rej) => { const q = indexedDB.open('musicui', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(); });
-    const b = await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get('bg'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); });
-    if (b) { $('pbg').src = URL.createObjectURL(b); document.body.classList.add('hasbg'); } else document.body.classList.remove('hasbg');
-  } catch (e) {}
+function recordPlay(s) {
+  recent = [s.id, ...recent.filter(x => x !== s.id)].slice(0, 50);
+  sb.from('recently_played').upsert({ user_id: me.id, song_id: s.id, played_at: new Date().toISOString() }, { onConflict: 'user_id,song_id' }).then(() => {});
 }
-window.addEventListener('message', e => { if (e.origin === location.origin && e.data === 'musicui') applyMusicUI(); });
-applyMusicUI();
+const nextIndex = () => shuffleOn && queue.length > 1 ? Math.floor(Math.random() * queue.length) : (qi + 1 < queue.length ? qi + 1 : 0);
+const prevIndex = () => qi > 0 ? qi - 1 : queue.length - 1;
+$('pp').onclick = () => { if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
+$('next').onclick = () => playIndex(nextIndex());
+$('prev').onclick = () => audio.currentTime > 3 ? (audio.currentTime = 0) : playIndex(prevIndex());
+audio.onplay = () => $('pp').textContent = '⏸';
+audio.onpause = () => $('pp').textContent = '▶';
+audio.onended = () => $('next').click();
+audio.ontimeupdate = () => {
+  $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(audio.duration);
+  if (audio.duration) { const pct = audio.currentTime / audio.duration * 100; $('seek').value = pct; $('miniProg').style.width = pct + '%'; }
+};
+$('seek').oninput = e => { if (audio.duration) audio.currentTime = e.target.value / 100 * audio.duration; };
+
+/* lock-screen and headset controls */
+if ('mediaSession' in navigator) {
+  const h = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
+  h('play', () => audio.play()); h('pause', () => audio.pause());
+  h('previoustrack', () => $('prev').click()); h('nexttrack', () => $('next').click());
+  h('seekto', d => { if (d.seekTime != null) audio.currentTime = d.seekTime; });
+}
+
+/* ---------- now playing ---------- */
+let actx, analyser, fdata, curSong = null, lyr = [], lyrSynced = false, lyrIdx = -1;
+let eqNodes = [], modeIn, modeOut, modeNodes = [], accent = '#1db954';
+function ensureGraph() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = actx.createMediaElementSource(audio);
+    analyser = actx.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.8;
+    fdata = new Uint8Array(analyser.frequencyBinCount);
+    eqNodes = EQF.map((f, i) => { const b = actx.createBiquadFilter(); b.type = 'peaking'; b.frequency.value = f; b.Q.value = 1; b.gain.value = S.eq[i]; return b; });
+    let prev = src; eqNodes.forEach(b => { prev.connect(b); prev = b; });
+    modeIn = actx.createGain(); modeOut = actx.createGain(); prev.connect(modeIn);
+    modeOut.connect(analyser); analyser.connect(actx.destination);
+    setMode(S.mode);
+  } catch (e) { actx = null; }
+}
+function parseLyrics(txt) {
+  const lines = []; let synced = false;
+  (txt || '').split(/\r?\n/).forEach(l => {
+    const m = l.match(/^\s*\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/);
+    if (m) { synced = true; lines.push({ t: +m[1] * 60 + parseFloat(m[2]), text: m[3] }); }
+    else if (l.trim()) lines.push({ t: null, text: l.trim() });
+  });
+  return synced ? { lines: lines.filter(l => l.t !== null).sort((a, b) => a.t - b.t), synced } : { lines, synced };
+}
+const updHeart = () => $('fLike').classList.toggle('on', !!curSong && favs.has(curSong.id));
+async function setNowPlaying(s) {
+  curSong = s;
+  $('fT').textContent = s.title; $('fA').textContent = s.artist;
+  const L = parseLyrics(s.lyrics); lyr = L.lines; lyrSynced = L.synced; lyrIdx = -1;
+  $('lyr').innerHTML = lyr.length ? lyr.map((l, i) => `<p data-i="${i}">${esc(l.text) || '♪'}</p>`).join('') : '<p class="dim">No lyrics yet. Tap the pencil to add them.</p>';
+  $('editLyr').style.display = s.owner === me.id ? '' : 'none';
+  const img = $('cover'); img.style.visibility = 'hidden'; img.removeAttribute('src');
+  if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist });
+  if (s.cover_path) {
+    const u = await signed('covers', s.cover_path);
+    if (u && curSong === s) {
+      img.src = u; img.style.visibility = 'visible';
+      if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist, artwork: [{ src: u, sizes: '512x512' }] });
+    }
+  }
+  updHeart();
+}
+const cv = $('viz'), cx = cv.getContext('2d'), pg = $('prog'), pc = pg.getContext('2d');
+function sizeCanvas(c) { const r = c.getBoundingClientRect(), d = devicePixelRatio || 1; c.width = r.width * d; c.height = r.height * d; }
+function draw() {
+  requestAnimationFrame(draw);
+  if ($('full').hidden) return;
+  if (analyser && !audio.paused) analyser.getByteFrequencyData(fdata); else if (fdata) fdata.fill(0);
+  const bin = f => fdata ? fdata[Math.min(fdata.length - 1, Math.floor(f * fdata.length * 0.75))] / 255 : 0;
+  const W = cv.width, n = 72, R = W * 0.29;
+  cx.clearRect(0, 0, cv.width, cv.height);
+  cx.lineWidth = W * 0.01; cx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const j = i < n / 2 ? i : n - 1 - i, v = bin(j / (n / 2));
+    cx.strokeStyle = vc(i / n);
+    const a = i / n * Math.PI * 2 - Math.PI / 2, r2 = R + W * 0.012 + v * W * 0.17;
+    cx.beginPath();
+    cx.moveTo(W / 2 + Math.cos(a) * R, cv.height / 2 + Math.sin(a) * R);
+    cx.lineTo(W / 2 + Math.cos(a) * r2, cv.height / 2 + Math.sin(a) * r2);
+    cx.stroke();
+  }
+  let bass = 0; for (let i = 0; i < 6; i++) bass += bin(i / 60); bass /= 6;
+  $('art').style.transform = `scale(${1 + bass * 0.07})`;
+  const PW = pg.width, PH = pg.height, bars = Math.floor(PW / (7 * (devicePixelRatio || 1))), pr = audio.duration ? audio.currentTime / audio.duration : 0;
+  pc.clearRect(0, 0, PW, PH);
+  for (let i = 0; i < bars; i++) {
+    const v = bin(i / bars), h = PH * 0.12 + v * PH * 0.85, x = (i + 0.5) / bars * PW;
+    pc.fillStyle = i / bars <= pr ? vc(i / bars) : 'rgba(255,255,255,.25)';
+    pc.fillRect(x - PW / bars * 0.3, (PH - h) / 2, PW / bars * 0.6, h);
+  }
+}
+draw();
+function openFull() {
+  if (!curSong) return;
+  history.pushState({ v: view, arg: viewArg, full: 1 }, '');
+  $('full').hidden = false; sizeCanvas(cv); sizeCanvas(pg);
+}
+function closeFull() { if (history.state && history.state.full) history.back(); else $('full').hidden = true; }
+$('np').onclick = openFull;
+$('np').onkeydown = e => { if (e.key === 'Enter') openFull(); };
+$('fClose').onclick = closeFull;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('full').hidden) closeFull(); });
+window.addEventListener('resize', () => { if (!$('full').hidden) { sizeCanvas(cv); sizeCanvas(pg); } });
+pg.onclick = e => { if (audio.duration) audio.currentTime = (e.offsetX / pg.clientWidth) * audio.duration; };
+$('fPP').onclick = () => $('pp').click();
+$('fPrev').onclick = () => $('prev').click();
+$('fNext').onclick = () => $('next').click();
+$('fLoop').onclick = () => { audio.loop = !audio.loop; $('fLoop').classList.toggle('on', audio.loop); };
+$('fShuf').onclick = () => { shuffleOn = !shuffleOn; $('fShuf').classList.toggle('on', shuffleOn); };
+$('fLyr').onclick = () => { const on = $('full').classList.toggle('lyrics'); $('fLyr').textContent = on ? 'Cover' : 'Lyrics'; if (!on) sizeCanvas(cv); };
+$('fAdd').onclick = () => curSong && openAddDialog(curSong.id);
+$('fLike').onclick = async () => { if (curSong) { await toggleFav(curSong.id); updHeart(); } };
+audio.addEventListener('play', () => $('fPP').textContent = '⏸');
+audio.addEventListener('pause', () => $('fPP').textContent = '▶');
+audio.addEventListener('timeupdate', () => {
+  $('fCur').textContent = fmt(audio.currentTime); $('fDur').textContent = fmt(audio.duration);
+  if (!lyrSynced) return;
+  let k = -1; for (let i = 0; i < lyr.length; i++) { if (lyr[i].t <= audio.currentTime) k = i; else break; }
+  if (k !== lyrIdx) {
+    lyrIdx = k;
+    document.querySelectorAll('#lyr p').forEach((p, i) => p.classList.toggle('now', i === k));
+    const el = $('lyr').children[k]; if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+});
+$('lyr').onclick = e => { const p = e.target.closest('p'); if (p && lyrSynced) audio.currentTime = lyr[p.dataset.i].t; };
+$('editLyr').onclick = () => {
+  const d = $('dlg');
+  d.innerHTML = `<h3 style="margin-top:0">Lyrics</h3>
+    <p class="sub" style="max-width:340px">Paste plain lyrics, or timed lines like [01:23.50] words. Sync lets you stamp each line as the song plays.</p>
+    <textarea id="lyTxt" rows="10"></textarea><div id="syncBox" style="margin:10px 0"></div>
+    <p><button class="green" id="lySave">Save</button> <button class="ghost" id="lySync">Sync</button> <button class="ghost" id="lyClose">Close</button></p>`;
+  $('lyTxt').value = curSong.lyrics || '';
+  $('lyClose').onclick = () => d.close();
+  $('lySave').onclick = async () => {
+    const txt = $('lyTxt').value;
+    const { error } = await sb.from('songs').update({ lyrics: txt }).eq('id', curSong.id);
+    if (error) return toast(error.message);
+    curSong.lyrics = txt; setNowPlaying(curSong); d.close(); toast('Lyrics saved');
+  };
+  $('lySync').onclick = () => {
+    const lines = $('lyTxt').value.split(/\r?\n/).map(l => l.replace(/^\s*\[[^\]]*\]\s*/, '').trim()).filter(Boolean);
+    if (!lines.length) return;
+    let i = 0; const out = [], box = $('syncBox');
+    audio.currentTime = 0; audio.play();
+    const showNext = () => box.innerHTML = i < lines.length ? `Next line: <b>${esc(lines[i])}</b><br><button class="green" id="stamp" style="margin-top:8px">Stamp it</button>` : 'Done. Press Save.';
+    box.onclick = e => {
+      if (e.target.id !== 'stamp') return;
+      const t = audio.currentTime;
+      out.push('[' + String(Math.floor(t / 60)).padStart(2, '0') + ':' + (t % 60).toFixed(2).padStart(5, '0') + '] ' + lines[i]); i++;
+      $('lyTxt').value = out.concat(lines.slice(i)).join('\n'); showNext();
+    };
+    showNext();
+  };
+  d.showModal();
+};
+
+/* ---------- settings ---------- */
+const EQF = [60, 230, 910, 3600, 14000];
+const PRESETS = { Flat: [0,0,0,0,0], 'Bass boost': [7,4,0,0,0], Vocal: [-2,0,4,3,0], Treble: [0,0,0,4,7] };
+const THEMES = { green:['#1db954','#1d3a2a','Green'], blue:['#3b82f6','#1b2f5a','Blue'], purple:['#a855f7','#3a1f5c','Purple'], pink:['#ec4899','#5c1f3f','Pink'], orange:['#f97316','#5c3216','Orange'], red:['#ef4444','#5c1f1f','Red'], teal:['#14b8a6','#154a46','Teal'], gold:['#eab308','#514514','Gold'] };
+const VCOL = { blue:'#4ea1ff', pink:'#ff4fa3', white:'#ffffff', gold:'#ffd23f' };
+const DEF = { eq:[0,0,0,0,0], mode:'stereo', viz:'theme', vizCustom:'#ff4081', theme:'green' };
+let S = { ...DEF };
+try { S = { ...DEF, ...JSON.parse(localStorage.getItem('musicSettings') || '{}') }; } catch (e) {}
+const saveS = () => { try { localStorage.setItem('musicSettings', JSON.stringify(S)); } catch (e) {} };
+function applyTheme() {
+  const t = THEMES[S.theme] || THEMES.green, r = document.documentElement.style;
+  accent = t[0]; r.setProperty('--green', t[0]); r.setProperty('--tint', t[1]);
+}
+function vc(f) {
+  if (S.viz === 'rainbow') return `hsl(${(f * 300 + performance.now() / 20) % 360},90%,60%)`;
+  if (S.viz === 'custom') return S.vizCustom;
+  return VCOL[S.viz] || accent;
+}
+function setMode(m) {
+  if (!modeIn) return;
+  modeIn.disconnect(); modeNodes.forEach(n => n.disconnect()); modeNodes = [];
+  if (m === 'mono') {
+    const g = actx.createGain(); g.channelCount = 1; g.channelCountMode = 'explicit';
+    modeIn.connect(g); g.connect(modeOut); modeNodes = [g];
+  } else if (m === 'surround') {
+    const sp = actx.createChannelSplitter(2), mg = actx.createChannelMerger(2);
+    modeIn.connect(sp); sp.connect(mg, 0, 0); sp.connect(mg, 1, 1);
+    const cross = (from, to) => { const d = actx.createDelay(); d.delayTime.value = 0.015; const g = actx.createGain(); g.gain.value = -0.4; sp.connect(d, from); d.connect(g); g.connect(mg, 0, to); modeNodes.push(d, g); };
+    cross(0, 1); cross(1, 0); mg.connect(modeOut); modeNodes.push(sp, mg);
+  } else modeIn.connect(modeOut);
+}
+const idb = () => new Promise((res, rej) => { const r = indexedDB.open('musicui', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const idbGet = async k => { const db = await idb(); return new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); };
+const idbSet = async (k, v) => { const db = await idb(); return new Promise(res => { const t = db.transaction('kv', 'readwrite'); v == null ? t.objectStore('kv').delete(k) : t.objectStore('kv').put(v, k); t.oncomplete = () => res(); }); };
+async function loadBg() {
+  try { const b = await idbGet('bg'); if (b) { $('bg').src = URL.createObjectURL(b); document.body.classList.add('hasbg'); } else document.body.classList.remove('hasbg'); } catch (e) {}
+}
+function settingsHtml() {
+  const chip = (k, v, label, style = '') => `<button class="chip ${S[k] === v ? 'sel' : ''}" data-set="${k}" data-v="${v}" style="${style}">${label}</button>`;
+  return head('Settings', 'Saved on this device') +
+    '<h3>Equalizer</h3><div class="eq">' + EQF.map((f, i) => `<label class="eqb"><input type="range" min="-12" max="12" step="1" value="${S.eq[i]}" data-eq="${i}" aria-label="${f} Hz"><small>${f >= 1000 ? f / 1000 + 'k' : f}</small></label>`).join('') + '</div>' +
+    '<div class="chips" style="margin-top:10px">' + Object.keys(PRESETS).map(n => `<button class="chip" data-preset="${n}">${n}</button>`).join('') + '</div>' +
+    '<h3>Sound</h3><div class="chips">' + chip('mode', 'stereo', 'Stereo') + chip('mode', 'mono', 'Mono') + chip('mode', 'surround', 'Surround (wide)') + '</div>' +
+    '<p class="sub">Surround widens regular stereo songs. It is not true multi-speaker surround.</p>' +
+    '<h3>Visualizer colors</h3><div class="chips">' + chip('viz', 'theme', 'Theme color') + chip('viz', 'rainbow', 'Rainbow') + chip('viz', 'blue', 'Blue') + chip('viz', 'pink', 'Pink') + chip('viz', 'gold', 'Gold') + chip('viz', 'white', 'White') +
+    `<span class="chip ${S.viz === 'custom' ? 'sel' : ''}">Custom <input type="color" id="vizCustom" value="${S.vizCustom}"></span></div>` +
+    '<h3>App colors</h3><div class="chips">' + Object.keys(THEMES).map(k => chip('theme', k, THEMES[k][2], `border-left:14px solid ${THEMES[k][0]}`)).join('') + '</div>' +
+    '<h3>Background</h3><div class="form"><input type="file" id="bgFile" accept="image/*,.gif"><small>Pictures and GIFs both work. GIFs stay animated. It is stored on this device only.</small><button class="ghost" data-clearbg="1" style="align-self:flex-start">Remove background</button></div>';
+}
+applyTheme(); loadBg();
+
+/* ---------- actions ---------- */
+async function toggleFav(id) {
+  if (favs.has(id)) {
+    const { error } = await sb.from('favorites').delete().eq('song_id', id).eq('user_id', me.id);
+    if (error) return toast(error.message);
+    favs.delete(id);
+  } else {
+    const { error } = await sb.from('favorites').insert({ song_id: id });
+    if (error) return toast(error.message);
+    favs.add(id);
+  }
+  document.querySelectorAll(`.song[data-sid="${id}"] [data-act="fav"]`).forEach(b => b.classList.toggle('on', favs.has(id)));
+  if (view === 'liked') render(true);
+}
+function openAddDialog(songId) {
+  const mine = playlists.filter(canEdit), d = $('dlg');
+  d.innerHTML = '<h3 style="margin-top:0">Add to playlist</h3>' +
+    (mine.length ? mine.map(p => `<p style="margin:6px 0"><button class="ghost" data-pid="${p.id}" style="width:100%;text-align:left">${esc(p.name)}</button></p>`).join('') : '<p class="sub">You have no playlists you can edit. Create one in the Create tab.</p>') +
+    '<p><button id="dlgClose">Close</button></p>';
+  d.querySelectorAll('[data-pid]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('playlist_songs').insert({ playlist_id: b.dataset.pid, song_id: songId });
+    d.close();
+    toast(error ? (error.code === '23505' ? 'Already in that playlist' : error.message) : 'Added');
+    if (!error && view === 'playlist' && viewArg === b.dataset.pid) render(true);
+  });
+  $('dlgClose').onclick = () => d.close();
+  d.showModal();
+}
+async function createPlaylist() {
+  const name = $('plName').value.trim();
+  if (!name) return toast('Give the playlist a name');
+  const is_public = document.querySelector('input[name=vis]:checked').value === 'public';
+  const collaborative = $('plColl').checked;
+  const { data, error } = await sb.from('playlists').insert({ name, is_public, collaborative }).select().single();
+  if (error) return toast(error.message);
+  const ids = [...document.querySelectorAll('.inv:checked')].map(c => c.value);
+  if (ids.length) {
+    const { error: e2 } = await sb.from('playlist_members').insert(ids.map(user_id => ({ playlist_id: data.id, user_id })));
+    if (e2) toast('Playlist created, but inviting failed: ' + e2.message);
+  }
+  await loadPlaylists();
+  go('playlist', data.id);
+}
+async function upload() {
+  const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = $('upFile').files[0];
+  if (!title || !artist || !file) return toast('Add a title, an artist, and a file');
+  const btn = $('upBtn'); btn.disabled = true; btn.textContent = 'Uploading…';
+  const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
+  const up = await sb.storage.from('songs').upload(path, file, { contentType: file.type });
+  if (up.error) { btn.disabled = false; btn.textContent = 'Upload song'; return toast(up.error.message); }
+  let cover_path = null; const cf = $('upCover').files[0];
+  if (cf) {
+    const cext = (cf.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+    cover_path = `${me.id}/${crypto.randomUUID()}.${cext}`;
+    const cu = await sb.storage.from('covers').upload(cover_path, cf, { contentType: cf.type });
+    if (cu.error) { cover_path = null; toast('Album art failed: ' + cu.error.message); }
+  }
+  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path, cover_path, lyrics: $('upLyrics').value.trim() || null });
+  if (error) {
+    await sb.storage.from('songs').remove([path]);
+    btn.disabled = false; btn.textContent = 'Upload song';
+    return toast(error.message);
+  }
+  toast('Uploaded');
+  await loadSongs();
+  query = ''; go('search');
+}
+
+/* ---------- events ---------- */
+let deb;
+$('main').addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'q') { clearTimeout(deb); deb = setTimeout(() => { query = t.value.trim(); renderResults(); }, 120); }
+  else if (t.id === 'pfBio') $('bioCount').textContent = t.value.length + '/300';
+  else if (t.dataset.eq !== undefined) { const i = +t.dataset.eq; S.eq[i] = +t.value; if (eqNodes[i]) eqNodes[i].gain.value = S.eq[i]; saveS(); }
+  else if (t.id === 'vizCustom') { S.vizCustom = t.value; S.viz = 'custom'; saveS(); }
+});
+$('main').addEventListener('change', async e => {
+  const t = e.target;
+  if (t.id === 'bgFile' && t.files[0]) { await idbSet('bg', t.files[0]); loadBg(); toast('Background set'); }
+  else if (t.id === 'pfAv' && t.files[0]) { pfRmAv = false; const el = $('pfAvatar'); el.style.backgroundImage = `url("${URL.createObjectURL(t.files[0])}")`; el.textContent = ''; }
+  else if (t.id === 'pfBd' && t.files[0]) { pfRmBd = false; $('pfBanner').style.backgroundImage = `url("${URL.createObjectURL(t.files[0])}")`; }
+  else if (openPlId() && (t.id === 'tgPub' || t.id === 'tgColl')) {
+    const patch = { is_public: $('tgPub').checked, collaborative: $('tgColl').checked };
+    const { error } = await sb.from('playlists').update(patch).eq('id', viewArg);
+    if (error) return toast(error.message);
+    await loadPlaylists(); render(true);
+  }
+});
+const openPlId = () => view === 'playlist' ? viewArg : null;
+
+$('main').addEventListener('click', async e => {
+  const c = e.target.closest('[data-set],[data-preset],[data-clearbg]');
+  if (c) {
+    if (c.dataset.preset) { S.eq = PRESETS[c.dataset.preset].slice(); eqNodes.forEach((n, i) => n.gain.value = S.eq[i]); }
+    else if (c.dataset.clearbg) { idbSet('bg', null).then(loadBg); return; }
+    else { S[c.dataset.set] = c.dataset.v; if (c.dataset.set === 'mode') setMode(S.mode); if (c.dataset.set === 'theme') applyTheme(); }
+    saveS(); return render(true);
+  }
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act;
+  const rowEl = el.closest('.song');
+  const s = rowEl ? (lists[rowEl.dataset.l] || [])[rowEl.dataset.i] : null;
+  if (act === 'nav') return go(el.dataset.v);
+  if (act === 'artist') { query = el.dataset.name; $('q').value = query; return renderResults(); }
+  if (act === 'play' && s) { queue = lists[rowEl.dataset.l].slice(); return playIndex(Number(rowEl.dataset.i)); }
+  if (act === 'playall') { const l = lists[el.dataset.l]; if (l && l.length) { queue = l.slice(); playIndex(0); } return; }
+  if (act === 'fav' && s) return toggleFav(s.id);
+  if (act === 'add' && s) return openAddDialog(s.id);
+  if (act === 'open') return go('playlist', el.dataset.id);
+  if (act === 'create') return createPlaylist();
+  if (act === 'upload') return upload();
+  if (act === 'logout') return logout();
+  if (act === 'callfriend') return callFriend({ id: el.dataset.uid, username: el.dataset.name });
+  if (act === 'clearrecent') {
+    const { error } = await sb.from('recently_played').delete().eq('user_id', me.id);
+    if (error) return toast(error.message);
+    recent = []; return render(true);
+  }
+  if (act === 'rm' && s) {
+    const { error } = await sb.from('playlist_songs').delete().eq('playlist_id', viewArg).eq('song_id', s.id);
+    return error ? toast(error.message) : render(true);
+  }
+  if (act === 'invite') {
+    const { error } = await sb.from('playlist_members').insert({ playlist_id: viewArg, user_id: el.dataset.uid });
+    return error ? toast(error.message) : render(true);
+  }
+  if (act === 'kick') {
+    e.preventDefault();
+    const { error } = await sb.from('playlist_members').delete().eq('playlist_id', viewArg).eq('user_id', el.dataset.uid);
+    return error ? toast(error.message) : render(true);
+  }
+  if (act === 'delpl') {
+    if (!confirm('Delete this playlist?')) return;
+    const { error } = await sb.from('playlists').delete().eq('id', viewArg);
+    if (error) return toast(error.message);
+    await loadPlaylists(); return go('library');
+  }
+  if (act === 'pfrmav') { pfRmAv = true; $('pfAv').value = ''; const a = $('pfAvatar'); a.style.backgroundImage = ''; a.textContent = me.username[0].toUpperCase(); return; }
+  if (act === 'pfrmbd') { pfRmBd = true; $('pfBd').value = ''; $('pfBanner').style.backgroundImage = ''; return; }
+  if (act === 'pfadd') { const v = $('pfPick').value; if (!v) return; if (pfFav.length >= 5) return toast('Up to 5 favorites'); pfFav.push(v); return renderPfFavs(); }
+  if (act === 'pfrm') { e.preventDefault(); pfFav = pfFav.filter(x => x !== el.dataset.sid); return renderPfFavs(); }
+  if (act === 'pfsave') return saveProfile();
+});
+
 start();
 </script>
 </body></html>
