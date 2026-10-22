@@ -51,41 +51,6 @@
   dialog { background:var(--panel); color:#fff; border:1px solid #333; border-radius:12px; padding:20px; min-width:280px; max-width:90vw; }
   dialog::backdrop { background:rgba(0,0,0,.7); }
   #toast { position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:#fff; color:#000; padding:10px 18px; border-radius:500px; font-weight:700; display:none; z-index:9; }
-  textarea { width:100%; background:#2a2a2a; color:#fff; font:inherit; border:1px solid transparent; border-radius:6px; padding:10px 12px; }
-  #np { cursor:pointer; }
-  #full { position:fixed; inset:0; z-index:20; background:linear-gradient(#1d3a2a,#000 70%); display:flex; flex-direction:column; align-items:center; padding:16px 20px 24px; gap:10px; overflow:hidden; }
-  #full[hidden] { display:none; }
-  #fClose { align-self:flex-start; padding:6px 16px; }
-  #fLyr { position:absolute; top:16px; right:16px; }
-  #stage { position:relative; flex:1; min-height:0; aspect-ratio:1; max-width:100%; display:flex; align-items:center; justify-content:center; }
-  #viz { position:absolute; inset:0; width:100%; height:100%; }
-  #art { position:relative; width:54%; aspect-ratio:1; border-radius:50%; overflow:hidden; background:linear-gradient(135deg,#1db954,#2b3a67); transition:transform .08s; }
-  #art::after { content:"♪"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:48px; }
-  #cover { position:relative; z-index:1; width:100%; height:100%; object-fit:cover; visibility:hidden; }
-  #lyr { display:none; flex:1; min-height:0; width:100%; max-width:560px; overflow-y:auto; text-align:center; font-size:26px; font-weight:800; line-height:1.4; padding:30vh 0; }
-  #lyr p { margin:12px 0; color:#777; cursor:pointer; }
-  #lyr p.now { color:#fff; }
-  #lyr .dim { color:var(--sub); font-size:16px; font-weight:400; }
-  #full.lyrics #stage { display:none; }
-  #full.lyrics #lyr { display:block; }
-  .finfo { display:flex; align-items:center; gap:8px; width:100%; max-width:520px; }
-  .finfo > div { flex:1; min-width:0; }
-  #prog { width:100%; max-width:520px; height:56px; cursor:pointer; }
-  .ftime { display:flex; justify-content:space-between; width:100%; max-width:520px; font-size:12px; color:var(--sub); }
-  .fctl { display:flex; gap:14px; align-items:center; }
-  #fPP { width:56px; height:56px; padding:0; font-size:20px; }
-  #main { background:linear-gradient(var(--tint,#1d3a2a), var(--panel) 260px); }
-  #full { background:linear-gradient(var(--tint,#1d3a2a), #000 70%); }
-  .chip.sel { background:var(--green); color:#000; }
-  .eq { display:flex; gap:18px; }
-  .eqb { display:flex; flex-direction:column; align-items:center; gap:6px; }
-  .eqb input { writing-mode:vertical-lr; direction:rtl; height:120px; accent-color:var(--green); }
-  input[type=color] { width:44px; height:34px; border:0; background:none; padding:0; cursor:pointer; vertical-align:middle; }
-  #bg { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:-1; display:none; }
-  body.hasbg #bg { display:block; }
-  body.hasbg #wrap, body.hasbg #side { background:rgba(18,18,18,.72); }
-  body.hasbg #main { background:transparent; }
-  .embed #side a { display:none; }
   @media (max-width:700px) {
     .layout { flex-direction:column; height:auto; padding-bottom:100px; }
     #side { width:100%; flex-direction:row; overflow-x:auto; }
@@ -105,7 +70,6 @@
     <button data-v="saved">Saved</button>
     <button data-v="playlists">Playlists</button>
     <button data-v="upload">Upload</button>
-    <button data-v="settings">Settings</button>
     <a href="index.html">Back to calls</a>
   </nav>
   <div id="wrap">
@@ -115,7 +79,7 @@
 </div>
 
 <div id="bar">
-  <div id="np" role="button" tabindex="0" title="Open now playing"><b id="npT">Nothing playing</b><small id="npA"></small></div>
+  <div id="np"><b id="npT">Nothing playing</b><small id="npA"></small></div>
   <div id="ctl">
     <div class="btns">
       <button class="ghost" id="prev" aria-label="Previous">⏮</button>
@@ -126,33 +90,10 @@
   </div>
 </div>
 <audio id="audio"></audio>
-<img id="bg" alt="">
-<div id="full" hidden>
-  <button class="ghost" id="fClose" aria-label="Close now playing">⌄ Close</button>
-  <button class="ghost" id="fLyr">Lyrics</button>
-  <div id="stage"><canvas id="viz"></canvas><div id="art"><img id="cover" alt="Album art"></div></div>
-  <div id="lyr"></div>
-  <div class="finfo">
-    <div><b id="fT"></b><br><small id="fA"></small></div>
-    <button class="ico" id="fLike" aria-label="Save to favorites">♥</button>
-    <button class="ico" id="fAdd" aria-label="Add to playlist">＋</button>
-    <button class="ico" id="editLyr" aria-label="Edit lyrics">✎</button>
-  </div>
-  <canvas id="prog"></canvas>
-  <div class="ftime"><span id="fCur">0:00</span><span id="fDur">0:00</span></div>
-  <div class="fctl">
-    <button class="ico" id="fShuf" aria-label="Shuffle">⇄</button>
-    <button class="ghost" id="fPrev" aria-label="Previous">⏮</button>
-    <button class="green" id="fPP" aria-label="Play or pause">▶</button>
-    <button class="ghost" id="fNext" aria-label="Next">⏭</button>
-    <button class="ico" id="fLoop" aria-label="Repeat this song">↻</button>
-  </div>
-</div>
 <dialog id="dlg"></dialog>
 <div id="toast" role="status"></div>
 
 <script>
-if (window.parent !== window) document.documentElement.classList.add('embed');
 const SB_URL = 'https://ueaqlinlpqgoxqlomyow.supabase.co';
 const SB_KEY = 'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT';
 const sb = supabase.createClient(SB_URL, SB_KEY);
@@ -171,7 +112,7 @@ function toast(msg) {
 
 /* ---------- data ---------- */
 async function loadSongs() {
-  const { data, error } = await sb.from('songs').select('id,title,artist,storage_path,owner,cover_path,lyrics').order('created_at', { ascending: false });
+  const { data, error } = await sb.from('songs').select('id,title,artist,storage_path,owner').order('created_at', { ascending: false });
   if (error) return toast(error.message);
   songs = data;
 }
@@ -273,18 +214,12 @@ async function render() {
       '<h3>Yours and shared</h3>' + (mine.length ? mine.map(card).join('') : empty('You have no playlists yet.')) +
       '<h3>Public</h3>' + (pub.length ? pub.map(card).join('') : empty('No public playlists from others yet.'));
 
-  } else if (view === 'settings') {
-    m.innerHTML = settingsHtml();
-
   } else if (view === 'upload') {
     m.innerHTML = head('Upload', 'MP3, M4A, AAC, OGG, WAV, FLAC or WebM, up to 50 MB') +
       `<div class="form">
          <input type="text" id="upTitle" maxlength="200" placeholder="Song title">
          <input type="text" id="upArtist" maxlength="200" placeholder="Artist">
          <input type="file" id="upFile" accept="audio/*">
-         <small>Album art (optional, up to 5 MB)</small>
-         <input type="file" id="upCover" accept="image/*">
-         <textarea id="upLyrics" rows="5" placeholder="Lyrics (optional). Plain text, or timed lines like [01:23.50] words"></textarea>
          <button class="green" id="upBtn" data-act="upload" style="align-self:flex-start">Upload song</button>
        </div>`;
   }
@@ -295,7 +230,7 @@ async function renderPlaylist(id) {
   const m = $('main');
   if (!p) { openPl = null; return render(); }
   const [{ data: ps }, { data: mem }] = await Promise.all([
-    sb.from('playlist_songs').select('song_id,songs(id,title,artist,storage_path,owner,cover_path,lyrics)').eq('playlist_id', id),
+    sb.from('playlist_songs').select('song_id,songs(id,title,artist,storage_path,owner)').eq('playlist_id', id),
     sb.from('playlist_members').select('user_id,profiles(username)').eq('playlist_id', id)
   ]);
   const list = (ps || []).map(r => r.songs).filter(Boolean);
@@ -330,220 +265,19 @@ async function playIndex(i) {
   qi = i; curId = s.id;
   const { data, error } = await sb.storage.from('songs').createSignedUrl(s.storage_path, 3600);
   if (error) return toast('Could not load this song: ' + error.message);
-  ensureGraph();
   audio.src = data.signedUrl;
   audio.play().catch(() => toast('Tap play to start'));
   $('npT').textContent = s.title; $('npA').textContent = s.artist;
-  setNowPlaying(s);
   document.querySelectorAll('.song').forEach(el => el.classList.toggle('cur', shown[el.dataset.i]?.id === curId));
 }
 $('pp').onclick = () => { if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
-let shuffleOn = false;
-$('next').onclick = () => playIndex(shuffleOn && queue.length > 1 ? Math.floor(Math.random() * queue.length) : (qi + 1 < queue.length ? qi + 1 : 0));
+$('next').onclick = () => playIndex(qi + 1 < queue.length ? qi + 1 : 0);
 $('prev').onclick = () => audio.currentTime > 3 ? (audio.currentTime = 0) : playIndex(qi > 0 ? qi - 1 : queue.length - 1);
 audio.onplay = () => $('pp').textContent = '⏸';
 audio.onpause = () => $('pp').textContent = '▶';
 audio.onended = () => $('next').click();
 audio.ontimeupdate = () => { $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(audio.duration); if (audio.duration) $('seek').value = audio.currentTime / audio.duration * 100; };
 $('seek').oninput = e => { if (audio.duration) audio.currentTime = e.target.value / 100 * audio.duration; };
-
-/* ---------- now playing ---------- */
-let actx, analyser, fdata, curSong = null, lyr = [], lyrSynced = false, lyrIdx = -1;
-let eqNodes = [], modeIn, modeOut, modeNodes = [], accent = '#1db954';
-audio.crossOrigin = 'anonymous';
-function ensureGraph() {
-  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
-  try {
-    actx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = actx.createMediaElementSource(audio);
-    analyser = actx.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.8;
-    fdata = new Uint8Array(analyser.frequencyBinCount);
-    eqNodes = EQF.map((f, i) => { const b = actx.createBiquadFilter(); b.type = 'peaking'; b.frequency.value = f; b.Q.value = 1; b.gain.value = S.eq[i]; return b; });
-    let prev = src; eqNodes.forEach(b => { prev.connect(b); prev = b; });
-    modeIn = actx.createGain(); modeOut = actx.createGain(); prev.connect(modeIn);
-    modeOut.connect(analyser); analyser.connect(actx.destination);
-    setMode(S.mode);
-  } catch (e) { actx = null; }
-}
-function parseLyrics(txt) {
-  const lines = []; let synced = false;
-  (txt || '').split(/\r?\n/).forEach(l => {
-    const m = l.match(/^\s*\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/);
-    if (m) { synced = true; lines.push({ t: +m[1] * 60 + parseFloat(m[2]), text: m[3] }); }
-    else if (l.trim()) lines.push({ t: null, text: l.trim() });
-  });
-  return synced ? { lines: lines.filter(l => l.t !== null).sort((a, b) => a.t - b.t), synced } : { lines, synced };
-}
-const updHeart = () => $('fLike').classList.toggle('on', !!curSong && favs.has(curSong.id));
-async function setNowPlaying(s) {
-  curSong = s;
-  $('fT').textContent = s.title; $('fA').textContent = s.artist;
-  const L = parseLyrics(s.lyrics); lyr = L.lines; lyrSynced = L.synced; lyrIdx = -1;
-  $('lyr').innerHTML = lyr.length ? lyr.map((l, i) => `<p data-i="${i}">${esc(l.text) || '♪'}</p>`).join('') : '<p class="dim">No lyrics yet. Tap the pencil to add them.</p>';
-  $('editLyr').style.display = s.owner === me.id ? '' : 'none';
-  const img = $('cover'); img.style.visibility = 'hidden'; img.removeAttribute('src');
-  if (s.cover_path) {
-    const { data } = await sb.storage.from('covers').createSignedUrl(s.cover_path, 3600);
-    if (data && curSong === s) { img.src = data.signedUrl; img.style.visibility = 'visible'; }
-  }
-  updHeart();
-}
-const cv = $('viz'), cx = cv.getContext('2d'), pg = $('prog'), pc = pg.getContext('2d');
-function sizeCanvas(c) { const r = c.getBoundingClientRect(), d = devicePixelRatio || 1; c.width = r.width * d; c.height = r.height * d; }
-function draw() {
-  requestAnimationFrame(draw);
-  if ($('full').hidden) return;
-  if (analyser && !audio.paused) analyser.getByteFrequencyData(fdata); else if (fdata) fdata.fill(0);
-  const bin = f => fdata ? fdata[Math.min(fdata.length - 1, Math.floor(f * fdata.length * 0.75))] / 255 : 0;
-  // radial bars around the album art, mirrored left and right
-  const W = cv.width, n = 72, R = W * 0.29;
-  cx.clearRect(0, 0, cv.width, cv.height);
-  cx.lineWidth = W * 0.01; cx.lineCap = 'round';
-  for (let i = 0; i < n; i++) {
-    const j = i < n / 2 ? i : n - 1 - i, v = bin(j / (n / 2));
-    cx.strokeStyle = vc(i / n);
-    const a = i / n * Math.PI * 2 - Math.PI / 2, r2 = R + W * 0.012 + v * W * 0.17;
-    cx.beginPath();
-    cx.moveTo(W / 2 + Math.cos(a) * R, cv.height / 2 + Math.sin(a) * R);
-    cx.lineTo(W / 2 + Math.cos(a) * r2, cv.height / 2 + Math.sin(a) * r2);
-    cx.stroke();
-  }
-  let bass = 0; for (let i = 0; i < 6; i++) bass += bin(i / 60); bass /= 6;
-  $('art').style.transform = `scale(${1 + bass * 0.07})`;
-  // progress bar made of live spectrum bars; played part is coloured
-  const PW = pg.width, PH = pg.height, bars = Math.floor(PW / (7 * (devicePixelRatio || 1))), pr = audio.duration ? audio.currentTime / audio.duration : 0;
-  pc.clearRect(0, 0, PW, PH);
-  for (let i = 0; i < bars; i++) {
-    const v = bin(i / bars), h = PH * 0.12 + v * PH * 0.85, x = (i + 0.5) / bars * PW;
-    pc.fillStyle = i / bars <= pr ? vc(i / bars) : 'rgba(255,255,255,.25)';
-    pc.fillRect(x - PW / bars * 0.3, (PH - h) / 2, PW / bars * 0.6, h);
-  }
-}
-draw();
-const openFull = () => { if (!curSong) return; $('full').hidden = false; sizeCanvas(cv); sizeCanvas(pg); };
-$('np').onclick = openFull;
-$('np').onkeydown = e => { if (e.key === 'Enter') openFull(); };
-$('fClose').onclick = () => $('full').hidden = true;
-document.addEventListener('keydown', e => { if (e.key === 'Escape') $('full').hidden = true; });
-window.addEventListener('resize', () => { if (!$('full').hidden) { sizeCanvas(cv); sizeCanvas(pg); } });
-pg.onclick = e => { if (audio.duration) audio.currentTime = (e.offsetX / pg.clientWidth) * audio.duration; };
-$('fPP').onclick = () => $('pp').click();
-$('fPrev').onclick = () => $('prev').click();
-$('fNext').onclick = () => $('next').click();
-$('fLoop').onclick = () => { audio.loop = !audio.loop; $('fLoop').classList.toggle('on', audio.loop); };
-$('fShuf').onclick = () => { shuffleOn = !shuffleOn; $('fShuf').classList.toggle('on', shuffleOn); };
-$('fLyr').onclick = () => { const on = $('full').classList.toggle('lyrics'); $('fLyr').textContent = on ? 'Cover' : 'Lyrics'; if (!on) { sizeCanvas(cv); } };
-$('fAdd').onclick = () => curSong && openAddDialog(curSong.id);
-$('fLike').onclick = async () => { if (curSong) { await toggleFav(curSong.id); updHeart(); } };
-audio.addEventListener('play', () => $('fPP').textContent = '⏸');
-audio.addEventListener('pause', () => $('fPP').textContent = '▶');
-audio.addEventListener('timeupdate', () => {
-  $('fCur').textContent = fmt(audio.currentTime); $('fDur').textContent = fmt(audio.duration);
-  if (!lyrSynced) return;
-  let k = -1; for (let i = 0; i < lyr.length; i++) { if (lyr[i].t <= audio.currentTime) k = i; else break; }
-  if (k !== lyrIdx) {
-    lyrIdx = k;
-    document.querySelectorAll('#lyr p').forEach((p, i) => p.classList.toggle('now', i === k));
-    const el = $('lyr').children[k]; if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
-});
-$('lyr').onclick = e => { const p = e.target.closest('p'); if (p && lyrSynced) audio.currentTime = lyr[p.dataset.i].t; };
-$('editLyr').onclick = () => {
-  const d = $('dlg');
-  d.innerHTML = `<h3 style="margin-top:0">Lyrics</h3>
-    <p class="sub" style="max-width:340px">Paste plain lyrics, or timed lines like [01:23.50] words. Sync lets you stamp each line as the song plays.</p>
-    <textarea id="lyTxt" rows="10"></textarea><div id="syncBox" style="margin:10px 0"></div>
-    <p><button class="green" id="lySave">Save</button> <button class="ghost" id="lySync">Sync</button> <button class="ghost" id="lyClose">Close</button></p>`;
-  $('lyTxt').value = curSong.lyrics || '';
-  $('lyClose').onclick = () => d.close();
-  $('lySave').onclick = async () => {
-    const txt = $('lyTxt').value;
-    const { error } = await sb.from('songs').update({ lyrics: txt }).eq('id', curSong.id);
-    if (error) return toast(error.message);
-    curSong.lyrics = txt; setNowPlaying(curSong); d.close(); toast('Lyrics saved');
-  };
-  $('lySync').onclick = () => {
-    const lines = $('lyTxt').value.split(/\r?\n/).map(l => l.replace(/^\s*\[[^\]]*\]\s*/, '').trim()).filter(Boolean);
-    if (!lines.length) return;
-    let i = 0; const out = [], box = $('syncBox');
-    audio.currentTime = 0; audio.play();
-    const show = () => box.innerHTML = i < lines.length ? `Next line: <b>${esc(lines[i])}</b><br><button class="green" id="stamp" style="margin-top:8px">Stamp it</button>` : 'Done. Press Save.';
-    box.onclick = e => {
-      if (e.target.id !== 'stamp') return;
-      const t = audio.currentTime;
-      out.push('[' + String(Math.floor(t / 60)).padStart(2, '0') + ':' + (t % 60).toFixed(2).padStart(5, '0') + '] ' + lines[i]); i++;
-      $('lyTxt').value = out.concat(lines.slice(i)).join('\n'); show();
-    };
-    show();
-  };
-  d.showModal();
-};
-
-/* ---------- settings ---------- */
-const EQF = [60, 230, 910, 3600, 14000];
-const PRESETS = { Flat: [0,0,0,0,0], 'Bass boost': [7,4,0,0,0], Vocal: [-2,0,4,3,0], Treble: [0,0,0,4,7] };
-const THEMES = { green:['#1db954','#1d3a2a','Green'], blue:['#3b82f6','#1b2f5a','Blue'], purple:['#a855f7','#3a1f5c','Purple'], pink:['#ec4899','#5c1f3f','Pink'], orange:['#f97316','#5c3216','Orange'], red:['#ef4444','#5c1f1f','Red'], teal:['#14b8a6','#154a46','Teal'], gold:['#eab308','#514514','Gold'] };
-const VCOL = { blue:'#4ea1ff', pink:'#ff4fa3', white:'#ffffff', gold:'#ffd23f' };
-const DEF = { eq:[0,0,0,0,0], mode:'stereo', viz:'theme', vizCustom:'#ff4081', theme:'green' };
-let S = { ...DEF };
-try { S = { ...DEF, ...JSON.parse(localStorage.getItem('musicSettings') || '{}') }; } catch (e) {}
-const saveS = () => { try { localStorage.setItem('musicSettings', JSON.stringify(S)); } catch (e) {} };
-function applyTheme() {
-  const t = THEMES[S.theme] || THEMES.green, r = document.documentElement.style;
-  accent = t[0]; r.setProperty('--green', t[0]); r.setProperty('--tint', t[1]);
-}
-function vc(f) {
-  if (S.viz === 'rainbow') return `hsl(${(f * 300 + performance.now() / 20) % 360},90%,60%)`;
-  if (S.viz === 'custom') return S.vizCustom;
-  return VCOL[S.viz] || accent;
-}
-function setMode(m) {
-  if (!modeIn) return;
-  modeIn.disconnect(); modeNodes.forEach(n => n.disconnect()); modeNodes = [];
-  if (m === 'mono') {
-    const g = actx.createGain(); g.channelCount = 1; g.channelCountMode = 'explicit';
-    modeIn.connect(g); g.connect(modeOut); modeNodes = [g];
-  } else if (m === 'surround') {
-    const sp = actx.createChannelSplitter(2), mg = actx.createChannelMerger(2);
-    modeIn.connect(sp); sp.connect(mg, 0, 0); sp.connect(mg, 1, 1);
-    const cross = (from, to) => { const d = actx.createDelay(); d.delayTime.value = 0.015; const g = actx.createGain(); g.gain.value = -0.4; sp.connect(d, from); d.connect(g); g.connect(mg, 0, to); modeNodes.push(d, g); };
-    cross(0, 1); cross(1, 0); mg.connect(modeOut); modeNodes.push(sp, mg);
-  } else modeIn.connect(modeOut);
-}
-const idb = () => new Promise((res, rej) => { const r = indexedDB.open('musicui', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-const idbGet = async k => { const db = await idb(); return new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); };
-const idbSet = async (k, v) => { const db = await idb(); return new Promise(res => { const t = db.transaction('kv', 'readwrite'); v == null ? t.objectStore('kv').delete(k) : t.objectStore('kv').put(v, k); t.oncomplete = () => res(); }); };
-async function loadBg() {
-  try { const b = await idbGet('bg'); if (b) { $('bg').src = URL.createObjectURL(b); document.body.classList.add('hasbg'); } else document.body.classList.remove('hasbg'); } catch (e) {}
-}
-function settingsHtml() {
-  const chip = (k, v, label, style = '') => `<button class="chip ${S[k] === v ? 'sel' : ''}" data-set="${k}" data-v="${v}" style="${style}">${label}</button>`;
-  return head('Settings', 'Saved on this device') +
-    '<h3>Equalizer</h3><div class="eq">' + EQF.map((f, i) => `<label class="eqb"><input type="range" min="-12" max="12" step="1" value="${S.eq[i]}" data-eq="${i}" aria-label="${f} Hz"><small>${f >= 1000 ? f / 1000 + 'k' : f}</small></label>`).join('') + '</div>' +
-    '<div class="chips" style="margin-top:10px">' + Object.keys(PRESETS).map(n => `<button class="chip" data-preset="${n}">${n}</button>`).join('') + '</div>' +
-    '<h3>Sound</h3><div class="chips">' + chip('mode', 'stereo', 'Stereo') + chip('mode', 'mono', 'Mono') + chip('mode', 'surround', 'Surround (wide)') + '</div>' +
-    '<p class="sub">Surround widens regular stereo songs. It is not true multi-speaker surround.</p>' +
-    '<h3>Visualizer colors</h3><div class="chips">' + chip('viz', 'theme', 'Theme color') + chip('viz', 'rainbow', 'Rainbow') + chip('viz', 'blue', 'Blue') + chip('viz', 'pink', 'Pink') + chip('viz', 'gold', 'Gold') + chip('viz', 'white', 'White') +
-    `<span class="chip ${S.viz === 'custom' ? 'sel' : ''}">Custom <input type="color" id="vizCustom" value="${S.vizCustom}"></span></div>` +
-    '<h3>App colors</h3><div class="chips">' + Object.keys(THEMES).map(k => chip('theme', k, THEMES[k][2], `border-left:14px solid ${THEMES[k][0]}`)).join('') + '</div>' +
-    '<h3>Background</h3><div class="form"><input type="file" id="bgFile" accept="image/*,.gif"><small>Pictures and GIFs both work. GIFs stay animated. It is stored on this device only.</small><button class="ghost" data-clearbg="1" style="align-self:flex-start">Remove background</button></div>';
-}
-$('main').addEventListener('input', e => {
-  const t = e.target;
-  if (t.dataset.eq !== undefined) { const i = +t.dataset.eq; S.eq[i] = +t.value; if (eqNodes[i]) eqNodes[i].gain.value = S.eq[i]; saveS(); }
-  else if (t.id === 'vizCustom') { S.vizCustom = t.value; S.viz = 'custom'; saveS(); }
-});
-$('main').addEventListener('click', e => {
-  const c = e.target.closest('[data-set],[data-preset],[data-clearbg]'); if (!c) return;
-  if (c.dataset.preset) { S.eq = PRESETS[c.dataset.preset].slice(); eqNodes.forEach((n, i) => n.gain.value = S.eq[i]); }
-  else if (c.dataset.clearbg) { idbSet('bg', null).then(loadBg); return; }
-  else { S[c.dataset.set] = c.dataset.v; if (c.dataset.set === 'mode') setMode(S.mode); if (c.dataset.set === 'theme') applyTheme(); }
-  saveS(); render();
-});
-$('main').addEventListener('change', async e => {
-  if (e.target.id === 'bgFile' && e.target.files[0]) { await idbSet('bg', e.target.files[0]); loadBg(); toast('Background set'); }
-});
-applyTheme(); loadBg();
 
 /* ---------- actions ---------- */
 async function toggleFav(id) {
@@ -599,14 +333,7 @@ async function upload() {
   const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
   const up = await sb.storage.from('songs').upload(path, file, { contentType: file.type });
   if (up.error) { btn.disabled = false; btn.textContent = 'Upload song'; return toast(up.error.message); }
-  let cover_path = null; const cf = $('upCover').files[0];
-  if (cf) {
-    const cext = (cf.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
-    cover_path = `${me.id}/${crypto.randomUUID()}.${cext}`;
-    const cu = await sb.storage.from('covers').upload(cover_path, cf, { contentType: cf.type });
-    if (cu.error) { cover_path = null; toast('Album art failed: ' + cu.error.message); }
-  }
-  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path, cover_path, lyrics: $('upLyrics').value.trim() || null });
+  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path });
   if (error) {
     await sb.storage.from('songs').remove([path]);
     btn.disabled = false; btn.textContent = 'Upload song';
