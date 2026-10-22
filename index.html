@@ -711,6 +711,9 @@ async function build(v) {
         <input id="spotifyPlaylist" type="text" placeholder="Paste Spotify playlist URL or ID">
         <button class="ghost" data-act="spotifyimport" style="align-self:flex-start">Import playlist tracks</button>
         <small id="spotifyStatus"></small>
+        <div id="spotifyPlayerStatus" class="sub">Spotify player not initialized.</div>
+        <div class="row"><button class="ghost" data-act="spotifyinit">Start Spotify Player</button><button class="ghost" data-act="spotifytoggle">Play / Pause</button><button class="ghost" data-act="spotifynext">Next</button></div>
+        <p class="sub">Playback requires Spotify Premium and an app with Web Playback SDK access. If you connected before this update, reconnect to grant playback permissions.</p>
         <h3>Search music</h3>
         <p class="sub">Search the iTunes music catalog for identification and short previews. Previews are not downloadable or stored. To permanently host a recording, upload an audio file you own or are licensed to distribute.</p>
         <div class="row"><input id="musicSearch" type="search" placeholder="Song or artist" style="flex:1;min-width:0"><button data-act="musicsearch">Search</button></div>
@@ -1402,6 +1405,7 @@ async function upload() {
 
 /* ---------- authorized music discovery and Spotify metadata import ---------- */
 const spotifyRedirect = () => location.origin + location.pathname;
+let spotifyPlayer = null, spotifyDeviceId = null;
 const importedKey = () => 'p2p_imported_' + (me?.id || 'anon');
 function importedTracks() { try { return JSON.parse(localStorage.getItem(importedKey()) || '[]'); } catch { return []; } }
 function storeImported(items) { localStorage.setItem(importedKey(), JSON.stringify(items.slice(0, 1000))); showImportedTracks(); }
@@ -1418,7 +1422,7 @@ function showImportedTracks() {
   const tracks = importedTracks();
   el.innerHTML = tracks.length ? tracks.map((t,i) => {
     const match = songs.find(s => s.title?.toLowerCase() === t.title.toLowerCase() && s.artist?.toLowerCase() === t.artist.toLowerCase());
-    return `<div class="prow"><div style="flex:1;min-width:0"><b>${esc(t.title)}</b><div class="sub">${esc(t.artist)} · ${esc(t.source)}</div></div><small>${match ? 'Available in library' : 'Metadata only'}</small><button class="ghost" data-act="musicremove" data-index="${i}">Remove</button></div>`;
+    return `<div class="prow"><div style="flex:1;min-width:0"><b>${esc(t.title)}</b><div class="sub">${esc(t.artist)} · ${esc(t.source)}</div></div><small>${match ? 'Available in library' : (t.spotifyId ? 'Spotify stream' : 'Metadata only')}</small>${t.spotifyId ? `<button class="green" data-act="spotifyplay" data-index="${i}">Play</button>` : ''}<button class="ghost" data-act="musicremove" data-index="${i}">Remove</button></div>`;
   }).join('') : '<p class="sub">No imported tracks yet.</p>';
 }
 async function searchMusicCatalog() {
@@ -1446,7 +1450,7 @@ async function connectSpotify() {
   const state = b64url(crypto.getRandomValues(new Uint8Array(20)));
   sessionStorage.setItem('p2p_spotify_pkce', JSON.stringify({verifier,state}));
   const url = new URL('https://accounts.spotify.com/authorize');
-  url.search = new URLSearchParams({client_id:id,response_type:'code',redirect_uri:spotifyRedirect(),scope:'playlist-read-private playlist-read-collaborative',code_challenge_method:'S256',code_challenge:b64url(new Uint8Array(digest)),state}).toString();
+  url.search = new URLSearchParams({client_id:id,response_type:'code',redirect_uri:spotifyRedirect(),scope:'playlist-read-private playlist-read-collaborative streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state',code_challenge_method:'S256',code_challenge:b64url(new Uint8Array(digest)),state}).toString();
   location.href = url.href;
 }
 async function handleSpotifyCallback() {
@@ -1461,6 +1465,8 @@ async function handleSpotifyCallback() {
     const token = await res.json();
     if (!res.ok || !token.access_token) throw Error(token.error_description || 'Spotify authorization failed');
     sessionStorage.setItem('p2p_spotify_token',token.access_token);
+    if (token.refresh_token) sessionStorage.setItem('p2p_spotify_refresh', token.refresh_token);
+    sessionStorage.setItem('p2p_spotify_expiry', String(Date.now() + (token.expires_in || 3600) * 1000));
     sessionStorage.removeItem('p2p_spotify_pkce');
     if (status) status.textContent = 'Spotify connected. Paste a playlist link below.';
   } catch (e) { if (status) status.textContent = e.message; }
@@ -1484,14 +1490,66 @@ async function importSpotifyPlaylist() {
       for (const item of data.items || []) {
         const t = item.item || item.track;
         if (!t?.name || !t.artists?.length) continue;
-        const obj = {title:t.name,artist:t.artists.map(a=>a.name).join(', '),source:'Spotify playlist'};
-        if (!all.some(x=>x.title.toLowerCase()===obj.title.toLowerCase() && x.artist.toLowerCase()===obj.artist.toLowerCase())) { all.push(obj); count++; }
+        const obj = {title:t.name,artist:t.artists.map(a=>a.name).join(', '),source:'Spotify playlist',spotifyId:t.id || null};
+        const existing = all.find(x=>x.title.toLowerCase()===obj.title.toLowerCase() && x.artist.toLowerCase()===obj.artist.toLowerCase());
+        if (existing) { if (obj.spotifyId) existing.spotifyId = obj.spotifyId; } else { all.push(obj); count++; }
       }
       url = data.next;
     }
     storeImported(all);
     if (status) status.textContent = `Imported ${count} track titles. No Spotify audio was downloaded.`;
   } catch(e) { if (status) status.textContent = e.message; }
+}
+
+async function spotifyToken() {
+  const token = sessionStorage.getItem('p2p_spotify_token');
+  if (token && Date.now() < Number(sessionStorage.getItem('p2p_spotify_expiry') || 0) - 60000) return token;
+  const refresh = sessionStorage.getItem('p2p_spotify_refresh');
+  const client = localStorage.getItem('p2p_spotify_client');
+  if (!refresh || !client) { if (token && !sessionStorage.getItem('p2p_spotify_expiry')) return token; throw Error('Reconnect Spotify to enable playback.'); }
+  const response = await fetch('https://accounts.spotify.com/api/token', {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:refresh,client_id:client})});
+  const data = await response.json();
+  if (!response.ok || !data.access_token) throw Error(data.error_description || 'Spotify token refresh failed. Reconnect Spotify.');
+  sessionStorage.setItem('p2p_spotify_token',data.access_token);
+  if (data.refresh_token) sessionStorage.setItem('p2p_spotify_refresh',data.refresh_token);
+  sessionStorage.setItem('p2p_spotify_expiry',String(Date.now()+(data.expires_in || 3600)*1000));
+  return data.access_token;
+}
+function spotifyPlayerStatus(message) { const el=$('spotifyPlayerStatus'); if (el) el.textContent=message; }
+async function initSpotifyPlayer() {
+  try {
+    await spotifyToken();
+    if (!window.Spotify) {
+      spotifyPlayerStatus('Loading Spotify Web Playback SDK…');
+      await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>reject(Error('Spotify SDK did not load.')),15000);
+        window.onSpotifyWebPlaybackSDKReady=()=>{clearTimeout(timeout);resolve();};
+        const script=document.createElement('script'); script.src='https://sdk.scdn.co/spotify-player.js';
+        script.onerror=()=>{clearTimeout(timeout);reject(Error('Spotify SDK unavailable.'));};
+        document.head.appendChild(script);
+        if (window.Spotify) {clearTimeout(timeout);resolve();}
+      });
+    }
+    if (spotifyPlayer) return spotifyPlayerStatus('Spotify player already initialized.');
+    spotifyPlayer=new Spotify.Player({name:'P2P Audio Spotify',getOAuthToken:async cb=>{try{cb(await spotifyToken());}catch(e){spotifyPlayerStatus(e.message);}},volume:0.65});
+    spotifyPlayer.addListener('ready',({device_id})=>{spotifyDeviceId=device_id;spotifyPlayerStatus('Spotify player ready. Select Play beside a Spotify track.');});
+    spotifyPlayer.addListener('not_ready',()=>{spotifyDeviceId=null;spotifyPlayerStatus('Spotify player disconnected.');});
+    for (const event of ['initialization_error','authentication_error','account_error','playback_error']) spotifyPlayer.addListener(event,({message})=>spotifyPlayerStatus('Spotify '+event+': '+message));
+    const ok=await spotifyPlayer.connect();
+    if (!ok) spotifyPlayerStatus('Could not connect. Check Premium and your developer app playback access.');
+  } catch(e) { spotifyPlayerStatus(e.message); }
+}
+async function playSpotifyImported(i) {
+  const track=importedTracks()[i]; if (!track?.spotifyId) return toast('Reimport this Spotify playlist to get track IDs');
+  if (!spotifyDeviceId) { await initSpotifyPlayer(); if (!spotifyDeviceId) return spotifyPlayerStatus('Wait for the player to be ready, then press Play again.'); }
+  try {
+    const token=await spotifyToken();
+    // SDK must be activated from the user's click before playback on some browsers.
+    await spotifyPlayer.activateElement();
+    const r=await fetch('https://api.spotify.com/v1/me/player/play?device_id='+encodeURIComponent(spotifyDeviceId),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({uris:['spotify:track:'+track.spotifyId]})});
+    if (!r.ok) { const body=await r.json().catch(()=>({})); throw Error(body.error?.message || `Spotify playback failed (${r.status}).`); }
+    spotifyPlayerStatus('Playing '+track.title+' — '+track.artist+' (streamed by Spotify)');
+  } catch(e) { spotifyPlayerStatus(e.message+' Check Premium, playback permissions and SDK app eligibility.'); }
 }
 
 /* ---------- events ---------- */
@@ -1532,6 +1590,10 @@ $('main').addEventListener('click', async e => {
   const act = el.dataset.act;
   const rowEl = el.closest('.song');
   const s = rowEl ? (lists[rowEl.dataset.l] || [])[rowEl.dataset.i] : null;
+  if (act === 'spotifyinit') return initSpotifyPlayer();
+  if (act === 'spotifyplay') return playSpotifyImported(Number(el.dataset.index));
+  if (act === 'spotifytoggle') return spotifyPlayer?.togglePlay() || toast('Start Spotify Player first');
+  if (act === 'spotifynext') return spotifyPlayer?.nextTrack() || toast('Start Spotify Player first');
   if (act === 'spotifyconnect') return connectSpotify();
   if (act === 'spotifyimport') return importSpotifyPlaylist();
   if (act === 'musicsearch') return searchMusicCatalog();
