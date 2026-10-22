@@ -302,6 +302,7 @@
   <div id="lyr"></div>
   <div class="finfo">
     <div><b id="fT"></b><br><small id="fA"></small></div>
+    <button class="ghost" id="foregroundEffectsToggle" type="button" aria-label="Toggle visual effects" aria-pressed="true" style="font-size:11px;padding:6px 9px;white-space:nowrap;flex-shrink:0">FX On</button>
     <button class="ico" id="fLike" aria-label="Save to favorites">♥</button>
     <button class="ico" id="fAdd" aria-label="Add to playlist">＋</button>
     <button class="ico" id="editLyr" aria-label="Edit lyrics">✎</button>
@@ -1207,17 +1208,21 @@ async function setNowPlaying(s) {
 // Safari keeps audio on the direct media-element path for reliable background playback.
 // Foreground-only visual motion is independent of the audio output graph.
 let foregroundEffects = true;
-const effectsButton = document.createElement('button');
-effectsButton.type = 'button';
-effectsButton.id = 'foregroundEffectsToggle';
-effectsButton.style.cssText = 'display:block;margin:10px auto;padding:8px 15px;border-radius:18px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;font:inherit';
+const effectsButton = $('foregroundEffectsToggle');
 function syncEffectsButton() {
-  effectsButton.textContent = foregroundEffects ? 'Visual effects: On' : 'Visual effects: Off';
+  effectsButton.textContent = foregroundEffects ? 'FX On' : 'FX Off';
   effectsButton.setAttribute('aria-pressed', String(foregroundEffects));
+  effectsButton.title = foregroundEffects ? 'Turn visual effects off' : 'Turn visual effects on';
 }
-effectsButton.onclick = () => { foregroundEffects = !foregroundEffects; syncEffectsButton(); if (!foregroundEffects) $('art').style.transform = ''; };
+effectsButton.addEventListener('click', () => {
+  foregroundEffects = !foregroundEffects;
+  syncEffectsButton();
+  if (!foregroundEffects) {
+    $('art').style.transform = '';
+    cx.clearRect(0, 0, cv.width, cv.height);
+  }
+});
 syncEffectsButton();
-$('viz').insertAdjacentElement('afterend', effectsButton);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) $('art').style.transform = '';
 });
