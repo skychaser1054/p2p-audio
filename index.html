@@ -57,6 +57,13 @@
     #side { width:100%; }
     #status { font-size:24px; }
   }
+
+  #main { display:flex; flex-direction:column; }
+  #tabs { display:flex; gap:8px; margin-bottom:16px; }
+  .tab { background:transparent; color:#fff; border:1px solid #727272; padding:8px 18px; }
+  .tab.on { background:var(--green); color:#000; border-color:var(--green); }
+  #callsPane { flex:1; }
+  #musicFrame { display:none; flex:1; width:100%; min-height:520px; border:0; border-radius:8px; background:#000; }
 </style>
 </head><body>
 
@@ -93,11 +100,9 @@
       <h4>Friends</h4>
       <div id="friendList"></div>
     </div>
-    <div id="main">
-      <p id="status"></p>
+    <div id="main"><div id="tabs"><button class="tab on" data-t="calls" onclick="tab('calls')">Calls</button><button class="tab" data-t="music" onclick="tab('music')">Music</button></div><div id="callsPane"><p id="status"></p>
       <p class="hint">Pick a friend on the left and press Call.</p>
-      <audio id="out" autoplay></audio>
-    </div>
+      <audio id="out" autoplay></audio></div><iframe id="musicFrame" title="Music"></iframe></div>
     <div id="bar">
       <div id="barL"><span id="cmsg"></span></div>
       <div id="barC">
@@ -282,7 +287,7 @@ async function callFriend(f) {
 function hangup() { if (current) current.close(); }
 
 async function openApp() {
-  show('appBox');
+  show('appBox'); $('musicFrame').src = 'music.html';
   $('status').textContent = 'Connecting...';
   await refresh();
   setInterval(refresh, 10000);
@@ -297,6 +302,12 @@ async function openApp() {
   });
 }
 
+function tab(t) {
+  const music = t === 'music';
+  $('callsPane').style.display = music ? 'none' : 'block';
+  $('musicFrame').style.display = music ? 'block' : 'none';
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+}
 start();
 </script>
 </body></html>

@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+  :root { --panel:#121212; --card:#1f1f1f; --sub:#b3b3b3; --green:#1db954; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#000; color:#fff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  h2 { margin:0 0 4px; font-size:28px; }
+  h3 { margin:24px 0 8px; font-size:18px; }
+  small, .sub { color:var(--sub); }
+  button { font:inherit; font-weight:700; cursor:pointer; border:0; border-radius:500px; padding:9px 18px; background:#fff; color:#000; }
+  button:hover { transform:scale(1.03); }
+  button:focus-visible, input:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+  .green { background:var(--green); }
+  .ghost { background:transparent; color:#fff; border:1px solid #727272; }
+  input[type=text], input[type=search], select { width:100%; background:#2a2a2a; color:#fff; font:inherit; border:1px solid transparent; border-radius:6px; padding:10px 12px; }
+  input[type=file] { color:var(--sub); }
+  .layout { display:flex; gap:8px; padding:8px; height:calc(100vh - 92px); }
+  #side { width:240px; flex-shrink:0; background:var(--panel); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:4px; }
+  #side button { text-align:left; background:transparent; color:var(--sub); border-radius:6px; padding:12px; }
+  #side button.on { background:var(--card); color:#fff; }
+  #side a { margin-top:auto; color:var(--sub); padding:12px; text-decoration:none; }
+  #wrap { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--panel); border-radius:8px; overflow:hidden; }
+  #top { padding:16px 28px 0; }
+  #main { flex:1; overflow-y:auto; padding:8px 28px 28px; background:linear-gradient(#1d3a2a, var(--panel) 260px); }
+  .song, .prow { display:flex; align-items:center; gap:10px; padding:8px; border-radius:6px; }
+  .song:hover, .prow:hover { background:var(--card); }
+  .song .t, .prow .t { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .song .t b, .prow .t b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .song.cur .t b { color:var(--green); }
+  .pl { width:36px; height:36px; padding:0; background:var(--green); }
+  .ico { background:transparent; color:var(--sub); padding:6px 10px; font-size:18px; }
+  .ico.on { color:var(--green); }
+  .form { max-width:460px; display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+  .form label { display:flex; align-items:center; gap:8px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:var(--card); border-radius:500px; padding:6px 14px; font-size:14px; cursor:pointer; border:0; color:#fff; font-weight:600; }
+  .tag { font-size:12px; border:1px solid #727272; border-radius:500px; padding:2px 8px; color:var(--sub); }
+  #bar { position:fixed; left:0; right:0; bottom:0; height:84px; background:#000; border-top:1px solid #222; padding:0 16px; display:flex; align-items:center; gap:16px; }
+  #np { width:28%; min-width:0; display:flex; flex-direction:column; }
+  #np b, #np small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #ctl { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  #ctl .btns { display:flex; gap:10px; align-items:center; }
+  #ctl .btns button { padding:6px 14px; }
+  #seekrow { display:flex; align-items:center; gap:8px; width:100%; max-width:520px; font-size:12px; color:var(--sub); }
+  #seek { flex:1; accent-color:var(--green); }
+  dialog { background:var(--panel); color:#fff; border:1px solid #333; border-radius:12px; padding:20px; min-width:280px; max-width:90vw; }
+  dialog::backdrop { background:rgba(0,0,0,.7); }
+  #toast { position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:#fff; color:#000; padding:10px 18px; border-radius:500px; font-weight:700; display:none; z-index:9; }
+  @media (max-width:700px) {
+    .layout { flex-direction:column; height:auto; padding-bottom:100px; }
+    #side { width:100%; flex-direction:row; overflow-x:auto; }
+    #side a { margin:0 0 0 auto; white-space:nowrap; }
+    #side button { white-space:nowrap; }
+    #wrap { min-height:70vh; }
+    #top, #main { padding-left:16px; padding-right:16px; }
+    #np { width:35%; }
+    #seekrow { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav id="side" aria-label="Sections">
+    <button data-v="library">Library</button>
+    <button data-v="saved">Saved</button>
+    <button data-v="playlists">Playlists</button>
+    <button data-v="upload">Upload</button>
+    <a href="index.html">Back to calls</a>
+  </nav>
+  <div id="wrap">
+    <div id="top"><input id="q" type="search" placeholder="Search songs and artists" aria-label="Search songs and artists"></div>
+    <div id="main"></div>
+  </div>
+</div>
+
+<div id="bar">
+  <div id="np"><b id="npT">Nothing playing</b><small id="npA"></small></div>
+  <div id="ctl">
+    <div class="btns">
+      <button class="ghost" id="prev" aria-label="Previous">⏮</button>
+      <button class="green" id="pp" aria-label="Play or pause">▶</button>
+      <button class="ghost" id="next" aria-label="Next">⏭</button>
+    </div>
+    <div id="seekrow"><span id="cur">0:00</span><input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Seek"><span id="dur">0:00</span></div>
+  </div>
+</div>
+<audio id="audio"></audio>
+<dialog id="dlg"></dialog>
+<div id="toast" role="status"></div>
+
+<script>
+const SB_URL = 'https://ueaqlinlpqgoxqlomyow.supabase.co';
+const SB_KEY = 'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = t => isFinite(t) ? Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0') : '0:00';
+
+let me = null, songs = [], favs = new Set(), friends = [], playlists = [], memberOf = new Set();
+let view = 'library', openPl = null, shown = [], queue = [], qi = -1, curId = null, query = '';
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2400);
+}
+
+/* ---------- data ---------- */
+async function loadSongs() {
+  const { data, error } = await sb.from('songs').select('id,title,artist,storage_path,owner').order('created_at', { ascending: false });
+  if (error) return toast(error.message);
+  songs = data;
+}
+async function loadFavs() {
+  const { data } = await sb.from('favorites').select('song_id');
+  favs = new Set((data || []).map(r => r.song_id));
+}
+async function loadFriends() {
+  const { data } = await sb.from('friend_requests').select('sender,receiver').eq('status', 'accepted');
+  const ids = (data || []).map(r => r.sender === me.id ? r.receiver : r.sender);
+  if (!ids.length) { friends = []; return; }
+  const { data: p } = await sb.from('profiles').select('id,username').in('id', ids);
+  friends = p || [];
+}
+async function loadPlaylists() {
+  const { data, error } = await sb.from('playlists')
+    .select('id,name,is_public,collaborative,owner,profiles!playlists_owner_fkey(username)')
+    .order('created_at', { ascending: false });
+  if (error) toast(error.message);
+  playlists = data || [];
+  const { data: m } = await sb.from('playlist_members').select('playlist_id').eq('user_id', me.id);
+  memberOf = new Set((m || []).map(r => r.playlist_id));
+}
+const canEdit = p => p.owner === me.id || (p.collaborative && memberOf.has(p.id));
+
+/* ---------- rendering helpers ---------- */
+const head = (title, subtitle) => `<h2>${esc(title)}</h2><p class="sub">${esc(subtitle || '')}</p>`;
+
+function songRows(list, extra) {
+  shown = list;
+  if (!list.length) return '';
+  return list.map((s, i) => `
+    <div class="song ${s.id === curId ? 'cur' : ''}" data-i="${i}">
+      <button class="pl" data-act="play" aria-label="Play ${esc(s.title)}">▶</button>
+      <div class="t"><b>${esc(s.title)}</b><small>${esc(s.artist)}</small></div>
+      <button class="ico ${favs.has(s.id) ? 'on' : ''}" data-act="fav" aria-label="Save to favorites">♥</button>
+      <button class="ico" data-act="add" aria-label="Add to playlist">＋</button>
+      ${extra ? extra(s) : ''}
+    </div>`).join('');
+}
+const empty = msg => `<p class="sub" style="margin-top:24px">${msg}</p>`;
+
+/* ---------- views ---------- */
+async function render() {
+  document.querySelectorAll('#side button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+  const m = $('main');
+
+  if (!me) {
+    m.innerHTML = head('Log in first', 'Sign in on the calls page, then come back here.') + `<p><a href="index.html" style="color:var(--green)">Go to the calls page</a></p>`;
+    return;
+  }
+
+  if (view === 'library') {
+    m.innerHTML = head('Library', songs.length + ' songs') +
+      (songs.length ? songRows(songs) : empty('No songs yet. Add audio files in the Upload tab.'));
+
+  } else if (view === 'saved') {
+    const list = songs.filter(s => favs.has(s.id));
+    m.innerHTML = head('Saved', list.length + ' songs') +
+      (list.length ? songRows(list) : empty('Tap the heart on any song to save it here.'));
+
+  } else if (view === 'search') {
+    const k = query.toLowerCase();
+    const hits = songs.filter(s => s.title.toLowerCase().includes(k) || s.artist.toLowerCase().includes(k));
+    const artists = {};
+    songs.filter(s => s.artist.toLowerCase().includes(k)).forEach(s => artists[s.artist] = (artists[s.artist] || 0) + 1);
+    let html = head('Results for “' + query + '”', hits.length + ' songs');
+    const names = Object.keys(artists);
+    if (names.length) {
+      html += '<h3>Artists</h3><div class="chips">' +
+        names.map(a => `<button class="chip" data-act="artist" data-name="${esc(a)}">${esc(a)} · ${artists[a]}</button>`).join('') + '</div>';
+    }
+    html += '<h3>Songs</h3>' + (hits.length ? songRows(hits) : empty('No songs or artists match that search.'));
+    m.innerHTML = html;
+
+  } else if (view === 'playlists') {
+    if (openPl) return renderPlaylist(openPl);
+    const mine = playlists.filter(p => p.owner === me.id || memberOf.has(p.id));
+    const pub = playlists.filter(p => p.is_public && !mine.includes(p));
+    const card = p => `
+      <div class="prow">
+        <div class="t"><b>${esc(p.name)}</b><small>by ${esc(p.profiles?.username || 'unknown')}</small></div>
+        <span class="tag">${p.is_public ? 'Public' : 'Private'}</span>
+        ${p.collaborative ? '<span class="tag">Co-op</span>' : ''}
+        <button class="ghost" data-act="open" data-id="${p.id}">Open</button>
+      </div>`;
+    m.innerHTML = head('Playlists', 'Yours, shared with you, and public') +
+      `<h3>New playlist</h3>
+       <div class="form">
+         <input type="text" id="plName" maxlength="100" placeholder="Playlist name">
+         <label><input type="radio" name="vis" value="private" checked> Private (only you and people you invite)</label>
+         <label><input type="radio" name="vis" value="public"> Public (any logged-in user can see it)</label>
+         <label><input type="checkbox" id="plColl"> Co-op: invited friends can add and remove songs</label>
+         <div><small>Invite friends</small>
+           <div class="chips" style="margin-top:6px">${friends.length ? friends.map(f => `<label class="chip"><input type="checkbox" class="inv" value="${f.id}"> ${esc(f.username)}</label>`).join('') : '<small>No friends yet. Add some on the calls page.</small>'}</div>
+         </div>
+         <button class="green" data-act="create" style="align-self:flex-start">Create playlist</button>
+       </div>` +
+      '<h3>Yours and shared</h3>' + (mine.length ? mine.map(card).join('') : empty('You have no playlists yet.')) +
+      '<h3>Public</h3>' + (pub.length ? pub.map(card).join('') : empty('No public playlists from others yet.'));
+
+  } else if (view === 'upload') {
+    m.innerHTML = head('Upload', 'MP3, M4A, AAC, OGG, WAV, FLAC or WebM, up to 50 MB') +
+      `<div class="form">
+         <input type="text" id="upTitle" maxlength="200" placeholder="Song title">
+         <input type="text" id="upArtist" maxlength="200" placeholder="Artist">
+         <input type="file" id="upFile" accept="audio/*">
+         <button class="green" id="upBtn" data-act="upload" style="align-self:flex-start">Upload song</button>
+       </div>`;
+  }
+}
+
+async function renderPlaylist(id) {
+  const p = playlists.find(x => x.id === id);
+  const m = $('main');
+  if (!p) { openPl = null; return render(); }
+  const [{ data: ps }, { data: mem }] = await Promise.all([
+    sb.from('playlist_songs').select('song_id,songs(id,title,artist,storage_path,owner)').eq('playlist_id', id),
+    sb.from('playlist_members').select('user_id,profiles(username)').eq('playlist_id', id)
+  ]);
+  const list = (ps || []).map(r => r.songs).filter(Boolean);
+  const editable = canEdit(p), isOwner = p.owner === me.id;
+  const memberIds = new Set((mem || []).map(r => r.user_id));
+  const invitable = friends.filter(f => !memberIds.has(f.id) && f.id !== p.owner);
+
+  let html = `<p><button class="ghost" data-act="back">Back</button></p>` + head(p.name, 'by ' + (p.profiles?.username || 'unknown'));
+  html += `<p><span class="tag">${p.is_public ? 'Public' : 'Private'}</span> ${p.collaborative ? '<span class="tag">Co-op</span>' : ''}</p>`;
+  if (isOwner) {
+    html += `<div class="form" style="margin:8px 0 0">
+      <label><input type="checkbox" id="tgPub" ${p.is_public ? 'checked' : ''}> Public</label>
+      <label><input type="checkbox" id="tgColl" ${p.collaborative ? 'checked' : ''}> Co-op: members can add and remove songs</label>
+      <button class="ghost" data-act="delpl" style="align-self:flex-start">Delete playlist</button></div>`;
+  }
+  html += '<h3>Songs</h3>' + (list.length
+    ? songRows(list, editable ? () => `<button class="ico" data-act="rm" aria-label="Remove from playlist">✕</button>` : null)
+    : empty(editable ? 'Empty for now. Use ＋ on any song in the Library to add it.' : 'No songs in this playlist yet.'));
+  html += '<h3>Members</h3><div class="chips">' +
+    ((mem || []).length ? mem.map(r => `<span class="chip">${esc(r.profiles?.username || 'user')}${isOwner ? ` <a href="#" data-act="kick" data-uid="${r.user_id}" style="color:#f15e6c">remove</a>` : ''}</span>`).join('') : '<small>Just the owner.</small>') + '</div>';
+  if (isOwner && invitable.length) {
+    html += '<h3>Invite a friend</h3><div class="chips">' +
+      invitable.map(f => `<button class="chip" data-act="invite" data-uid="${f.id}">+ ${esc(f.username)}</button>`).join('') + '</div>';
+  }
+  m.innerHTML = html;
+}
+
+/* ---------- player ---------- */
+const audio = $('audio');
+async function playIndex(i) {
+  const s = queue[i]; if (!s) return;
+  qi = i; curId = s.id;
+  const { data, error } = await sb.storage.from('songs').createSignedUrl(s.storage_path, 3600);
+  if (error) return toast('Could not load this song: ' + error.message);
+  audio.src = data.signedUrl;
+  audio.play().catch(() => toast('Tap play to start'));
+  $('npT').textContent = s.title; $('npA').textContent = s.artist;
+  document.querySelectorAll('.song').forEach(el => el.classList.toggle('cur', shown[el.dataset.i]?.id === curId));
+}
+$('pp').onclick = () => { if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
+$('next').onclick = () => playIndex(qi + 1 < queue.length ? qi + 1 : 0);
+$('prev').onclick = () => audio.currentTime > 3 ? (audio.currentTime = 0) : playIndex(qi > 0 ? qi - 1 : queue.length - 1);
+audio.onplay = () => $('pp').textContent = '⏸';
+audio.onpause = () => $('pp').textContent = '▶';
+audio.onended = () => $('next').click();
+audio.ontimeupdate = () => { $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(audio.duration); if (audio.duration) $('seek').value = audio.currentTime / audio.duration * 100; };
+$('seek').oninput = e => { if (audio.duration) audio.currentTime = e.target.value / 100 * audio.duration; };
+
+/* ---------- actions ---------- */
+async function toggleFav(id) {
+  if (favs.has(id)) {
+    const { error } = await sb.from('favorites').delete().eq('song_id', id).eq('user_id', me.id);
+    if (error) return toast(error.message);
+    favs.delete(id);
+  } else {
+    const { error } = await sb.from('favorites').insert({ song_id: id });
+    if (error) return toast(error.message);
+    favs.add(id);
+  }
+  render();
+}
+
+function openAddDialog(songId) {
+  const mine = playlists.filter(canEdit);
+  const d = $('dlg');
+  d.innerHTML = '<h3 style="margin-top:0">Add to playlist</h3>' +
+    (mine.length ? mine.map(p => `<p style="margin:6px 0"><button class="ghost" data-pid="${p.id}" style="width:100%;text-align:left">${esc(p.name)}</button></p>`).join('') : '<p class="sub">You have no playlists you can edit. Create one in the Playlists tab.</p>') +
+    '<p><button id="dlgClose">Close</button></p>';
+  d.querySelectorAll('[data-pid]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('playlist_songs').insert({ playlist_id: b.dataset.pid, song_id: songId });
+    d.close();
+    toast(error ? (error.code === '23505' ? 'Already in that playlist' : error.message) : 'Added');
+  });
+  $('dlgClose').onclick = () => d.close();
+  d.showModal();
+}
+
+async function createPlaylist() {
+  const name = $('plName').value.trim();
+  if (!name) return toast('Give the playlist a name');
+  const is_public = document.querySelector('input[name=vis]:checked').value === 'public';
+  const collaborative = $('plColl').checked;
+  const { data, error } = await sb.from('playlists').insert({ name, is_public, collaborative }).select().single();
+  if (error) return toast(error.message);
+  const ids = [...document.querySelectorAll('.inv:checked')].map(c => c.value);
+  if (ids.length) {
+    const { error: e2 } = await sb.from('playlist_members').insert(ids.map(user_id => ({ playlist_id: data.id, user_id })));
+    if (e2) toast('Playlist created, but inviting failed: ' + e2.message);
+  }
+  await loadPlaylists();
+  openPl = data.id;
+  render();
+}
+
+async function upload() {
+  const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = $('upFile').files[0];
+  if (!title || !artist || !file) return toast('Add a title, an artist, and a file');
+  const btn = $('upBtn'); btn.disabled = true; btn.textContent = 'Uploading…';
+  const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
+  const up = await sb.storage.from('songs').upload(path, file, { contentType: file.type });
+  if (up.error) { btn.disabled = false; btn.textContent = 'Upload song'; return toast(up.error.message); }
+  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path });
+  if (error) {
+    await sb.storage.from('songs').remove([path]);
+    btn.disabled = false; btn.textContent = 'Upload song';
+    return toast(error.message);
+  }
+  toast('Uploaded');
+  await loadSongs();
+  view = 'library'; render();
+}
+
+/* ---------- events ---------- */
+$('main').addEventListener('click', async e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act;
+  const row = el.closest('.song');
+  const s = row ? shown[row.dataset.i] : null;
+  if (act === 'artist') { $('q').value = el.dataset.name; query = el.dataset.name; return render(); }
+  if (act === 'play') { queue = shown.slice(); return playIndex(Number(row.dataset.i)); }
+  if (act === 'fav') return toggleFav(s.id);
+  if (act === 'add') return openAddDialog(s.id);
+  if (act === 'open') { openPl = el.dataset.id; return render(); }
+  if (act === 'back') { openPl = null; return render(); }
+  if (act === 'create') return createPlaylist();
+  if (act === 'upload') return upload();
+  if (act === 'rm') {
+    const { error } = await sb.from('playlist_songs').delete().eq('playlist_id', openPl).eq('song_id', s.id);
+    return error ? toast(error.message) : render();
+  }
+  if (act === 'invite') {
+    const { error } = await sb.from('playlist_members').insert({ playlist_id: openPl, user_id: el.dataset.uid });
+    return error ? toast(error.message) : render();
+  }
+  if (act === 'kick') {
+    e.preventDefault();
+    const { error } = await sb.from('playlist_members').delete().eq('playlist_id', openPl).eq('user_id', el.dataset.uid);
+    return error ? toast(error.message) : render();
+  }
+  if (act === 'delpl') {
+    if (!confirm('Delete this playlist?')) return;
+    const { error } = await sb.from('playlists').delete().eq('id', openPl);
+    if (error) return toast(error.message);
+    openPl = null; await loadPlaylists(); render();
+  }
+});
+$('main').addEventListener('change', async e => {
+  if (!openPl || (e.target.id !== 'tgPub' && e.target.id !== 'tgColl')) return;
+  const patch = { is_public: $('tgPub').checked, collaborative: $('tgColl').checked };
+  const { error } = await sb.from('playlists').update(patch).eq('id', openPl);
+  if (error) return toast(error.message);
+  await loadPlaylists(); render();
+});
+document.querySelectorAll('#side button').forEach(b => b.onclick = () => {
+  view = b.dataset.v; openPl = null; $('q').value = ''; query = ''; render();
+});
+let deb;
+$('q').addEventListener('input', e => {
+  clearTimeout(deb);
+  deb = setTimeout(() => {
+    query = e.target.value.trim();
+    view = query ? 'search' : 'library';
+    openPl = null; render();
+  }, 150);
+});
+
+/* ---------- start ---------- */
+(async () => {
+  const { data } = await sb.auth.getSession();
+  me = data.session?.user || null;
+  if (me) await Promise.all([loadSongs(), loadFavs(), loadFriends(), loadPlaylists()]);
+  render();
+})();
+</script>
+</body>
+</html>
