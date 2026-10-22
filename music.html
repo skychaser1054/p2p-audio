@@ -74,6 +74,17 @@
   .ftime { display:flex; justify-content:space-between; width:100%; max-width:520px; font-size:12px; color:var(--sub); }
   .fctl { display:flex; gap:14px; align-items:center; }
   #fPP { width:56px; height:56px; padding:0; font-size:20px; }
+  #main { background:linear-gradient(var(--tint,#1d3a2a), var(--panel) 260px); }
+  #full { background:linear-gradient(var(--tint,#1d3a2a), #000 70%); }
+  .chip.sel { background:var(--green); color:#000; }
+  .eq { display:flex; gap:18px; }
+  .eqb { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .eqb input { writing-mode:vertical-lr; direction:rtl; height:120px; accent-color:var(--green); }
+  input[type=color] { width:44px; height:34px; border:0; background:none; padding:0; cursor:pointer; vertical-align:middle; }
+  #bg { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:-1; display:none; }
+  body.hasbg #bg { display:block; }
+  body.hasbg #wrap, body.hasbg #side { background:rgba(18,18,18,.72); }
+  body.hasbg #main { background:transparent; }
   .embed #side a { display:none; }
   @media (max-width:700px) {
     .layout { flex-direction:column; height:auto; padding-bottom:100px; }
@@ -94,6 +105,7 @@
     <button data-v="saved">Saved</button>
     <button data-v="playlists">Playlists</button>
     <button data-v="upload">Upload</button>
+    <button data-v="settings">Settings</button>
     <a href="index.html">Back to calls</a>
   </nav>
   <div id="wrap">
@@ -114,6 +126,7 @@
   </div>
 </div>
 <audio id="audio"></audio>
+<img id="bg" alt="">
 <div id="full" hidden>
   <button class="ghost" id="fClose" aria-label="Close now playing">⌄ Close</button>
   <button class="ghost" id="fLyr">Lyrics</button>
@@ -260,6 +273,9 @@ async function render() {
       '<h3>Yours and shared</h3>' + (mine.length ? mine.map(card).join('') : empty('You have no playlists yet.')) +
       '<h3>Public</h3>' + (pub.length ? pub.map(card).join('') : empty('No public playlists from others yet.'));
 
+  } else if (view === 'settings') {
+    m.innerHTML = settingsHtml();
+
   } else if (view === 'upload') {
     m.innerHTML = head('Upload', 'MP3, M4A, AAC, OGG, WAV, FLAC or WebM, up to 50 MB') +
       `<div class="form">
@@ -333,7 +349,7 @@ $('seek').oninput = e => { if (audio.duration) audio.currentTime = e.target.valu
 
 /* ---------- now playing ---------- */
 let actx, analyser, fdata, curSong = null, lyr = [], lyrSynced = false, lyrIdx = -1;
-const VIZ = '#1db954';
+let eqNodes = [], modeIn, modeOut, modeNodes = [], accent = '#1db954';
 audio.crossOrigin = 'anonymous';
 function ensureGraph() {
   if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
@@ -342,7 +358,11 @@ function ensureGraph() {
     const src = actx.createMediaElementSource(audio);
     analyser = actx.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.8;
     fdata = new Uint8Array(analyser.frequencyBinCount);
-    src.connect(analyser); analyser.connect(actx.destination);
+    eqNodes = EQF.map((f, i) => { const b = actx.createBiquadFilter(); b.type = 'peaking'; b.frequency.value = f; b.Q.value = 1; b.gain.value = S.eq[i]; return b; });
+    let prev = src; eqNodes.forEach(b => { prev.connect(b); prev = b; });
+    modeIn = actx.createGain(); modeOut = actx.createGain(); prev.connect(modeIn);
+    modeOut.connect(analyser); analyser.connect(actx.destination);
+    setMode(S.mode);
   } catch (e) { actx = null; }
 }
 function parseLyrics(txt) {
@@ -378,9 +398,10 @@ function draw() {
   // radial bars around the album art, mirrored left and right
   const W = cv.width, n = 72, R = W * 0.29;
   cx.clearRect(0, 0, cv.width, cv.height);
-  cx.lineWidth = W * 0.01; cx.lineCap = 'round'; cx.strokeStyle = VIZ;
+  cx.lineWidth = W * 0.01; cx.lineCap = 'round';
   for (let i = 0; i < n; i++) {
     const j = i < n / 2 ? i : n - 1 - i, v = bin(j / (n / 2));
+    cx.strokeStyle = vc(i / n);
     const a = i / n * Math.PI * 2 - Math.PI / 2, r2 = R + W * 0.012 + v * W * 0.17;
     cx.beginPath();
     cx.moveTo(W / 2 + Math.cos(a) * R, cv.height / 2 + Math.sin(a) * R);
@@ -394,7 +415,7 @@ function draw() {
   pc.clearRect(0, 0, PW, PH);
   for (let i = 0; i < bars; i++) {
     const v = bin(i / bars), h = PH * 0.12 + v * PH * 0.85, x = (i + 0.5) / bars * PW;
-    pc.fillStyle = i / bars <= pr ? VIZ : 'rgba(255,255,255,.25)';
+    pc.fillStyle = i / bars <= pr ? vc(i / bars) : 'rgba(255,255,255,.25)';
     pc.fillRect(x - PW / bars * 0.3, (PH - h) / 2, PW / bars * 0.6, h);
   }
 }
@@ -457,6 +478,72 @@ $('editLyr').onclick = () => {
   };
   d.showModal();
 };
+
+/* ---------- settings ---------- */
+const EQF = [60, 230, 910, 3600, 14000];
+const PRESETS = { Flat: [0,0,0,0,0], 'Bass boost': [7,4,0,0,0], Vocal: [-2,0,4,3,0], Treble: [0,0,0,4,7] };
+const THEMES = { green:['#1db954','#1d3a2a','Green'], blue:['#3b82f6','#1b2f5a','Blue'], purple:['#a855f7','#3a1f5c','Purple'], pink:['#ec4899','#5c1f3f','Pink'], orange:['#f97316','#5c3216','Orange'], red:['#ef4444','#5c1f1f','Red'], teal:['#14b8a6','#154a46','Teal'], gold:['#eab308','#514514','Gold'] };
+const VCOL = { blue:'#4ea1ff', pink:'#ff4fa3', white:'#ffffff', gold:'#ffd23f' };
+const DEF = { eq:[0,0,0,0,0], mode:'stereo', viz:'theme', vizCustom:'#ff4081', theme:'green' };
+let S = { ...DEF };
+try { S = { ...DEF, ...JSON.parse(localStorage.getItem('musicSettings') || '{}') }; } catch (e) {}
+const saveS = () => { try { localStorage.setItem('musicSettings', JSON.stringify(S)); } catch (e) {} };
+function applyTheme() {
+  const t = THEMES[S.theme] || THEMES.green, r = document.documentElement.style;
+  accent = t[0]; r.setProperty('--green', t[0]); r.setProperty('--tint', t[1]);
+}
+function vc(f) {
+  if (S.viz === 'rainbow') return `hsl(${(f * 300 + performance.now() / 20) % 360},90%,60%)`;
+  if (S.viz === 'custom') return S.vizCustom;
+  return VCOL[S.viz] || accent;
+}
+function setMode(m) {
+  if (!modeIn) return;
+  modeIn.disconnect(); modeNodes.forEach(n => n.disconnect()); modeNodes = [];
+  if (m === 'mono') {
+    const g = actx.createGain(); g.channelCount = 1; g.channelCountMode = 'explicit';
+    modeIn.connect(g); g.connect(modeOut); modeNodes = [g];
+  } else if (m === 'surround') {
+    const sp = actx.createChannelSplitter(2), mg = actx.createChannelMerger(2);
+    modeIn.connect(sp); sp.connect(mg, 0, 0); sp.connect(mg, 1, 1);
+    const cross = (from, to) => { const d = actx.createDelay(); d.delayTime.value = 0.015; const g = actx.createGain(); g.gain.value = -0.4; sp.connect(d, from); d.connect(g); g.connect(mg, 0, to); modeNodes.push(d, g); };
+    cross(0, 1); cross(1, 0); mg.connect(modeOut); modeNodes.push(sp, mg);
+  } else modeIn.connect(modeOut);
+}
+const idb = () => new Promise((res, rej) => { const r = indexedDB.open('musicui', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const idbGet = async k => { const db = await idb(); return new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); };
+const idbSet = async (k, v) => { const db = await idb(); return new Promise(res => { const t = db.transaction('kv', 'readwrite'); v == null ? t.objectStore('kv').delete(k) : t.objectStore('kv').put(v, k); t.oncomplete = () => res(); }); };
+async function loadBg() {
+  try { const b = await idbGet('bg'); if (b) { $('bg').src = URL.createObjectURL(b); document.body.classList.add('hasbg'); } else document.body.classList.remove('hasbg'); } catch (e) {}
+}
+function settingsHtml() {
+  const chip = (k, v, label, style = '') => `<button class="chip ${S[k] === v ? 'sel' : ''}" data-set="${k}" data-v="${v}" style="${style}">${label}</button>`;
+  return head('Settings', 'Saved on this device') +
+    '<h3>Equalizer</h3><div class="eq">' + EQF.map((f, i) => `<label class="eqb"><input type="range" min="-12" max="12" step="1" value="${S.eq[i]}" data-eq="${i}" aria-label="${f} Hz"><small>${f >= 1000 ? f / 1000 + 'k' : f}</small></label>`).join('') + '</div>' +
+    '<div class="chips" style="margin-top:10px">' + Object.keys(PRESETS).map(n => `<button class="chip" data-preset="${n}">${n}</button>`).join('') + '</div>' +
+    '<h3>Sound</h3><div class="chips">' + chip('mode', 'stereo', 'Stereo') + chip('mode', 'mono', 'Mono') + chip('mode', 'surround', 'Surround (wide)') + '</div>' +
+    '<p class="sub">Surround widens regular stereo songs. It is not true multi-speaker surround.</p>' +
+    '<h3>Visualizer colors</h3><div class="chips">' + chip('viz', 'theme', 'Theme color') + chip('viz', 'rainbow', 'Rainbow') + chip('viz', 'blue', 'Blue') + chip('viz', 'pink', 'Pink') + chip('viz', 'gold', 'Gold') + chip('viz', 'white', 'White') +
+    `<span class="chip ${S.viz === 'custom' ? 'sel' : ''}">Custom <input type="color" id="vizCustom" value="${S.vizCustom}"></span></div>` +
+    '<h3>App colors</h3><div class="chips">' + Object.keys(THEMES).map(k => chip('theme', k, THEMES[k][2], `border-left:14px solid ${THEMES[k][0]}`)).join('') + '</div>' +
+    '<h3>Background</h3><div class="form"><input type="file" id="bgFile" accept="image/*,.gif"><small>Pictures and GIFs both work. GIFs stay animated. It is stored on this device only.</small><button class="ghost" data-clearbg="1" style="align-self:flex-start">Remove background</button></div>';
+}
+$('main').addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.eq !== undefined) { const i = +t.dataset.eq; S.eq[i] = +t.value; if (eqNodes[i]) eqNodes[i].gain.value = S.eq[i]; saveS(); }
+  else if (t.id === 'vizCustom') { S.vizCustom = t.value; S.viz = 'custom'; saveS(); }
+});
+$('main').addEventListener('click', e => {
+  const c = e.target.closest('[data-set],[data-preset],[data-clearbg]'); if (!c) return;
+  if (c.dataset.preset) { S.eq = PRESETS[c.dataset.preset].slice(); eqNodes.forEach((n, i) => n.gain.value = S.eq[i]); }
+  else if (c.dataset.clearbg) { idbSet('bg', null).then(loadBg); return; }
+  else { S[c.dataset.set] = c.dataset.v; if (c.dataset.set === 'mode') setMode(S.mode); if (c.dataset.set === 'theme') applyTheme(); }
+  saveS(); render();
+});
+$('main').addEventListener('change', async e => {
+  if (e.target.id === 'bgFile' && e.target.files[0]) { await idbSet('bg', e.target.files[0]); loadBg(); toast('Background set'); }
+});
+applyTheme(); loadBg();
 
 /* ---------- actions ---------- */
 async function toggleFav(id) {
