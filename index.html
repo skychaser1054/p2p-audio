@@ -292,7 +292,7 @@
   </div>
 </div>
 
-<audio id="audio"></audio>
+<audio id="audio" preload="metadata"></audio>
 <audio id="out" autoplay playsinline></audio>
 
 <div id="full" hidden>
@@ -545,7 +545,7 @@ function updateBadges() {
 
 /* ---------- data ---------- */
 async function loadSongs() {
-  const { data, error } = await sb.from('songs').select('id,title,artist,storage_path,owner,cover_path,lyrics').order('created_at', { ascending: false });
+  const { data, error } = await sb.from('songs').select('id,title,artist,storage_path,owner,cover_path,lyrics,visibility').order('created_at', { ascending: false });
   if (error) return toast(error.message);
   songs = data;
 }
@@ -692,6 +692,12 @@ async function build(v) {
   if (v === 'upload') {
     return [head('Upload', 'MP3, M4A, AAC, OGG, WAV, FLAC or WebM, up to 50 MB') +
       `<div class="form">
+         <label for="upVisibility">Upload destination</label>
+         <select id="upVisibility">
+           <option value="private">Private Library — only you</option>
+           ${me.id === '135ecf00-34d3-4c71-bd97-125fa6078b3a' ? '<option value="shared">Shared Library — all accounts</option>' : ''}
+         </select>
+         <small>Only the administrator can publish to the Shared Library. Private uploads are visible only to their owner.</small>
          <input type="text" id="upTitle" maxlength="200" placeholder="Song title">
          <input type="text" id="upArtist" maxlength="200" placeholder="Artist">
          <input type="file" id="upFile" accept="audio/*">
@@ -1108,13 +1114,16 @@ function initPeer() {
 /* ---------- player ---------- */
 const audio = $('audio');
 audio.crossOrigin = 'anonymous';
+// iOS Safari is more reliable with direct HTMLMediaElement output.
+// Web Audio graph processing may suspend when the screen locks.
+const safariIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let shuffleOn = false;
 async function playIndex(i) {
   const s = queue[i]; if (!s) return;
   qi = i; curId = s.id;
   const { data, error } = await sb.storage.from('songs').createSignedUrl(s.storage_path, 3600);
   if (error) return toast('Could not load this song: ' + error.message);
-  ensureGraph();
+  if (!safariIOS) ensureGraph();
   audio.src = data.signedUrl;
   audio.play().catch(() => toast('Tap play to start'));
   $('npT').textContent = s.title; $('npA').textContent = s.artist;
@@ -1130,12 +1139,15 @@ const prevIndex = () => qi > 0 ? qi - 1 : queue.length - 1;
 $('pp').onclick = () => { if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
 $('next').onclick = () => playIndex(nextIndex());
 $('prev').onclick = () => audio.currentTime > 3 ? (audio.currentTime = 0) : playIndex(prevIndex());
-audio.onplay = () => $('pp').textContent = '⏸';
-audio.onpause = () => $('pp').textContent = '▶';
+audio.onplay = () => { $('pp').textContent = '⏸'; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; };
+audio.onpause = () => { $('pp').textContent = '▶'; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; };
 audio.onended = () => $('next').click();
 audio.ontimeupdate = () => {
   $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(audio.duration);
-  if (audio.duration) { const pct = audio.currentTime / audio.duration * 100; $('seek').value = pct; $('miniProg').style.width = pct + '%'; }
+  if (Number.isFinite(audio.duration) && audio.duration > 0) { const pct = audio.currentTime / audio.duration * 100; $('seek').value = pct; $('miniProg').style.width = pct + '%'; }
+  if ('mediaSession' in navigator && navigator.mediaSession.setPositionState && Number.isFinite(audio.duration) && audio.duration > 0) {
+    try { navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate, position: Math.min(audio.currentTime, audio.duration) }); } catch (e) {}
+  }
 };
 $('seek').oninput = e => { if (audio.duration) audio.currentTime = e.target.value / 100 * audio.duration; };
 
@@ -1151,6 +1163,7 @@ if ('mediaSession' in navigator) {
 let actx, analyser, fdata, curSong = null, lyr = [], lyrSynced = false, lyrIdx = -1;
 let eqNodes = [], modeIn, modeOut, modeNodes = [], accent = '#1db954';
 function ensureGraph() {
+  if (safariIOS) return;
   if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
   try {
     actx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1191,13 +1204,40 @@ async function setNowPlaying(s) {
   }
   updHeart();
 }
+// Safari keeps audio on the direct media-element path for reliable background playback.
+// Foreground-only visual motion is independent of the audio output graph.
+let foregroundEffects = true;
+const effectsButton = document.createElement('button');
+effectsButton.type = 'button';
+effectsButton.id = 'foregroundEffectsToggle';
+effectsButton.style.cssText = 'display:block;margin:10px auto;padding:8px 15px;border-radius:18px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;font:inherit';
+function syncEffectsButton() {
+  effectsButton.textContent = foregroundEffects ? 'Visual effects: On' : 'Visual effects: Off';
+  effectsButton.setAttribute('aria-pressed', String(foregroundEffects));
+}
+effectsButton.onclick = () => { foregroundEffects = !foregroundEffects; syncEffectsButton(); if (!foregroundEffects) $('art').style.transform = ''; };
+syncEffectsButton();
+$('viz').insertAdjacentElement('afterend', effectsButton);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) $('art').style.transform = '';
+});
 const cv = $('viz'), cx = cv.getContext('2d'), pg = $('prog'), pc = pg.getContext('2d');
 function sizeCanvas(c) { const r = c.getBoundingClientRect(), d = devicePixelRatio || 1; c.width = r.width * d; c.height = r.height * d; }
 function draw() {
   requestAnimationFrame(draw);
-  if ($('full').hidden) return;
+  if ($('full').hidden || document.hidden || !foregroundEffects) return;
   if (analyser && !audio.paused) analyser.getByteFrequencyData(fdata); else if (fdata) fdata.fill(0);
-  const bin = f => fdata ? fdata[Math.min(fdata.length - 1, Math.floor(f * fdata.length * 0.75))] / 255 : 0;
+  // iPhone Safari: visual-only animated rhythm, not measured audio frequencies.
+  // Never attach Web Audio to the music element, so locking the screen won't
+  // suspend the audio output along with the visualizer.
+  const bin = f => {
+    if (safariIOS) {
+      if (audio.paused) return 0;
+      const t = audio.currentTime;
+      return Math.max(0.05, Math.min(0.92, 0.22 + 0.30 * Math.sin(t * (5.5 + f * 3) + f * 29) ** 2 + 0.23 * Math.sin(t * 2.6 + f * 43) ** 2));
+    }
+    return fdata ? fdata[Math.min(fdata.length - 1, Math.floor(f * fdata.length * 0.75))] / 255 : 0;
+  };
   const W = cv.width, n = 72, R = W * 0.29;
   cx.clearRect(0, 0, cv.width, cv.height);
   cx.lineWidth = W * 0.01; cx.lineCap = 'round';
@@ -1450,6 +1490,7 @@ async function autoFillMusicUpload(file) {
 }
 async function upload() {
   const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = $('upFile').files[0];
+  const visibility = $('upVisibility')?.value === 'shared' ? 'shared' : 'private';
   if (!title || !artist || !file) return toast('Add a title, an artist, and a file');
   const btn = $('upBtn'); btn.disabled = true; btn.textContent = 'Uploading…';
   const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1463,7 +1504,7 @@ async function upload() {
     const cu = await sb.storage.from('covers').upload(cover_path, cf, { contentType: cf.type });
     if (cu.error) { cover_path = null; toast('Album art failed: ' + cu.error.message); }
   }
-  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path, cover_path, lyrics: $('upLyrics').value.trim() || null });
+  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path, cover_path, visibility, lyrics: $('upLyrics').value.trim() || null });
   if (error) {
     await sb.storage.from('songs').remove([path]);
     btn.disabled = false; btn.textContent = 'Upload song';
