@@ -887,10 +887,12 @@ async function build(v) {
          <input type="text" id="upTitle" maxlength="200" placeholder="Song title">
          <input type="text" id="upArtist" maxlength="200" placeholder="Artist">
          <input type="file" id="upFile" accept="audio/*">
-         <small id="autoMetaStatus">Select an audio file to automatically read its title, artist, album artwork, and embedded lyrics. Review the results before uploading.</small>
+         <small id="autoMetaStatus" role="status" aria-live="polite">Select an audio file to automatically read its title, artist, album artwork, and embedded lyrics. Review the results before uploading.</small>
          <img id="autoCoverPreview" alt="Detected album artwork" hidden style="width:144px;height:144px;object-fit:cover;border-radius:8px">
          <small>Album art (optional, up to 5 MB)</small>
          <input type="file" id="upCover" accept="image/*">
+         <button class="ghost" data-act="retryart" type="button">Find / retry artwork</button>
+         <label><input id="skipCover" type="checkbox"> Upload without artwork</label>
          <textarea id="upLyrics" rows="5" placeholder="Lyrics (optional). Plain text, or timed lines like [01:23.50] words"></textarea>
          <button class="green" id="upBtn" data-act="upload" style="align-self:flex-start">Upload song</button>
        </div>`];
@@ -1708,12 +1710,29 @@ async function createPlaylist() {
   go('playlist', data.id);
 }
 /* Automatic metadata detection: local tags first, catalog cover lookup second. */
-let autoMusicRequest = 0;
+let autoMusicRequest = 0, metadataTask = Promise.resolve(), detectedCover = null;
 function readMusicTags(file) {
   return new Promise(resolve => {
     if (!window.jsmediatags) return resolve({});
-    window.jsmediatags.read(file, {onSuccess: r => resolve(r.tags || {}), onError: () => resolve({})});
+    const timer = setTimeout(() => resolve({}), 12000);
+    const done = tags => { clearTimeout(timer); resolve(tags); };
+    try { window.jsmediatags.read(file, {onSuccess:r => done(r.tags || {}), onError:() => done({})}); }
+    catch (e) { done({}); }
   });
+}
+async function validateCover(blob) {
+  if (!blob || !blob.size || blob.size > 5 * 1024 * 1024 || !/^image\/(jpeg|png|webp|gif)$/i.test(blob.type)) throw Error('Choose a JPEG, PNG, WebP, or GIF image under 5 MB.');
+  const url = URL.createObjectURL(blob);
+  try {
+    await new Promise((resolve, reject) => {
+      const image = new Image();
+      const timer = setTimeout(() => reject(Error('Artwork image could not be decoded.')), 10000);
+      image.onload = () => { clearTimeout(timer); image.naturalWidth && image.naturalHeight ? resolve() : reject(Error('Artwork is empty.')); };
+      image.onerror = () => { clearTimeout(timer); reject(Error('Artwork image is damaged or unsupported.')); };
+      image.src = url;
+    });
+  } finally { URL.revokeObjectURL(url); }
+  return blob;
 }
 function tagText(value) {
   if (typeof value === 'string') return value.trim();
@@ -1721,19 +1740,65 @@ function tagText(value) {
   return '';
 }
 function setUploadCover(blob, name='detected-cover.jpg') {
-  if (!blob || blob.size > 5 * 1024 * 1024 || !blob.type.startsWith('image/')) return false;
+  // Keep the file independently; assigning input.files fails on some browsers.
   const file = new File([blob], name, {type:blob.type});
-  const dt = new DataTransfer(); dt.items.add(file); $('upCover').files = dt.files;
+  detectedCover = {file, audio:$('upFile')?.files[0]};
   const preview = $('autoCoverPreview');
   if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
   preview.dataset.objectUrl = URL.createObjectURL(file);
   preview.src = preview.dataset.objectUrl; preview.hidden = false;
   return true;
 }
+const normalizeMusic = v => String(v || '').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+async function catalogCover(title, artist, album = '') {
+  const terms = [[artist,title,album].filter(Boolean).join(' '), [artist,title].join(' ')];
+  let failure = null;
+  for (const term of [...new Set(terms)]) {
+    try {
+      const response = await fetch('https://itunes.apple.com/search?entity=song&limit=25&term='+encodeURIComponent(term), {signal:AbortSignal.timeout(12000)});
+      if (!response.ok) throw Error('Music catalog unavailable.');
+      const data = await response.json();
+      const matches = (data.results || []).filter(x => normalizeMusic(x.trackName) === normalizeMusic(title) && normalizeMusic(x.artistName) === normalizeMusic(artist));
+      matches.sort((a,b) => Number(normalizeMusic(b.collectionName) === normalizeMusic(album)) - Number(normalizeMusic(a.collectionName) === normalizeMusic(album)));
+      for (const match of matches.slice(0,3)) {
+        if (!match.artworkUrl100) continue;
+        const original = new URL(match.artworkUrl100);
+        if (original.protocol !== 'https:' || !/(^|\.)mzstatic\.com$/.test(original.hostname)) continue;
+        for (const url of [...new Set([original.href.replace(/100x100bb/, '600x600bb'), original.href])]) {
+          try {
+            const image = await fetch(url, {signal:AbortSignal.timeout(12000)});
+            if (!image.ok) throw Error('Artwork download failed.');
+            return await validateCover(await image.blob());
+          } catch (e) { failure = e; }
+        }
+      }
+    } catch (e) { failure = e; }
+  }
+  throw Error(failure ? 'Artwork could not be downloaded. Retry or choose an image.' : 'No matching artwork found. Check title and artist, retry, or choose an image.');
+}
+async function retryArtwork() {
+  const file = $('upFile')?.files[0], title = $('upTitle')?.value.trim(), artist = $('upArtist')?.value.trim();
+  if (!file || !title || !artist) return toast('Select a song and enter its title and artist first.');
+  const request = ++autoMusicRequest, status = $('autoMetaStatus');
+  status.textContent = 'Finding and downloading artwork…';
+  try {
+    const cover = await catalogCover(title, artist);
+    if (request !== autoMusicRequest || $('upFile')?.files[0] !== file || $('upTitle')?.value.trim() !== title || $('upArtist')?.value.trim() !== artist) return;
+    $('upCover').value = ''; setUploadCover(cover);
+    status.textContent = 'Artwork downloaded and ready to upload. Review the preview.';
+  } catch (e) { if (request === autoMusicRequest && $('autoMetaStatus') === status) status.textContent = e.message; }
+}
+function beginMusicMetadata(file) {
+  metadataTask = autoFillMusicUpload(file).catch(e => { if ($('autoMetaStatus')) $('autoMetaStatus').textContent = 'Metadata unavailable. Enter title and artist, then retry artwork.'; });
+  return metadataTask;
+}
 async function autoFillMusicUpload(file) {
   const request = ++autoMusicRequest;
   const status = $('autoMetaStatus'); status.textContent = 'Reading file metadata…';
-  const preview = $('autoCoverPreview'); preview.hidden = true;
+  detectedCover = null;
+  const preview = $('autoCoverPreview');
+  if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+  preview.hidden = true;
   $('upCover').value = '';
   const tags = await readMusicTags(file);
   if (request !== autoMusicRequest || !$('upFile') || $('upFile').files[0] !== file) return;
@@ -1750,57 +1815,83 @@ async function autoFillMusicUpload(file) {
     try {
       const picture = tags.picture;
       const mime = picture.format || 'image/jpeg';
-      coverFound = setUploadCover(new Blob([new Uint8Array(picture.data)], {type:mime}), 'embedded-cover.'+(mime.includes('png')?'png':'jpg'));
+      const blob = await validateCover(new Blob([new Uint8Array(picture.data)], {type:mime === 'image/jpg' ? 'image/jpeg' : mime}));
+      if (request !== autoMusicRequest || $('upFile')?.files[0] !== file) return;
+      coverFound = setUploadCover(blob, 'embedded-cover.'+(mime.includes('png')?'png':'jpg'));
     } catch(e) { console.warn('Embedded cover could not be read',e); }
   }
   if (!coverFound && artist && title) {
     status.textContent = 'Identified '+title+' — '+artist+'. Looking for album artwork…';
     try {
-      const term = [artist,title,album].filter(Boolean).join(' ');
-      const response = await fetch('https://itunes.apple.com/search?entity=song&limit=10&term='+encodeURIComponent(term));
-      if (!response.ok) throw Error('Catalog lookup unavailable');
-      const data = await response.json();
-      if (request !== autoMusicRequest || $('upFile')?.files[0] !== file) return;
-      const norm = v => String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-      const match = (data.results||[]).find(x => norm(x.trackName)===norm(title) && norm(x.artistName)===norm(artist) && (!album || norm(x.collectionName)===norm(album))) ||
-        (data.results||[]).find(x => norm(x.trackName)===norm(title) && norm(x.artistName)===norm(artist));
-      if (match?.artworkUrl100) {
-        // Catalog art may be displayed as a reference; only embed it if its license permits redistribution.
-        const image = $('autoCoverPreview'); image.src = match.artworkUrl100.replace(/100x100bb/, '600x600bb'); image.hidden = false;
-        image.dataset.catalogUrl = image.src;
-        status.textContent = 'Metadata filled. Catalog artwork preview found. To store artwork permanently, choose an image you have permission to upload.';
-        return;
-      }
-    } catch(e) { console.warn('Cover lookup failed',e); }
+      const cover = await catalogCover(title, artist, album);
+      if (request !== autoMusicRequest || $('upFile')?.files[0] !== file || $('upTitle')?.value.trim() !== title || $('upArtist')?.value.trim() !== artist) return;
+      setUploadCover(cover);
+      status.textContent = 'Title, artist, and catalog artwork ready. Review before uploading.';
+      return;
+    } catch(e) { if (request === autoMusicRequest && $('autoMetaStatus') === status) status.textContent = e.message; return; }
   }
+  if (request !== autoMusicRequest || $('upFile')?.files[0] !== file) return;
   status.textContent = coverFound ? 'Title, artist and embedded artwork detected. '+(lyrics?'Embedded lyrics detected.':'No embedded lyrics found.') :
     'Title and artist filled where available. No embedded cover found. '+(lyrics?'Embedded lyrics detected.':'Lyrics can be added manually if you have permission.');
 }
+async function uploadVerifiedCover(file, userId) {
+  await validateCover(file);
+  const ext = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'}[file.type.toLowerCase()];
+  let failure;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+    try {
+      const uploaded = await sb.storage.from('covers').upload(path, file, {contentType:file.type});
+      if (uploaded.error) throw uploaded.error;
+      const stored = await sb.storage.from('covers').download(path);
+      if (stored.error) throw stored.error;
+      await validateCover(stored.data);
+      if (stored.data.size !== file.size) throw Error('Saved artwork was incomplete.');
+      return path;
+    } catch (e) {
+      failure = e;
+      await sb.storage.from('covers').remove([path]).catch(() => {});
+      if (e.statusCode && ![408,429].includes(Number(e.statusCode)) && Number(e.statusCode) < 500) break;
+    }
+  }
+  throw Error('Artwork could not be saved: '+(failure?.message || 'connection failed')+'. Retry upload or choose another image.');
+}
 async function upload() {
-  const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = $('upFile').files[0];
-  const visibility = $('upVisibility')?.value === 'shared' ? 'shared' : 'private';
-  if (!title || !artist || !file) return toast('Add a title, an artist, and a file');
-  const btn = $('upBtn'); btn.disabled = true; btn.textContent = 'Uploading…';
-  const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
-  const up = await sb.storage.from('songs').upload(path, file, { contentType: file.type });
-  if (up.error) { btn.disabled = false; btn.textContent = 'Upload song'; return toast(up.error.message); }
-  let cover_path = null; const cf = $('upCover').files[0];
-  if (cf) {
-    const cext = (cf.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
-    cover_path = `${me.id}/${crypto.randomUUID()}.${cext}`;
-    const cu = await sb.storage.from('covers').upload(cover_path, cf, { contentType: cf.type });
-    if (cu.error) { cover_path = null; toast('Album art failed: ' + cu.error.message); }
-  }
-  const { error } = await sb.from('songs').insert({ title, artist, storage_path: path, cover_path, visibility, lyrics: $('upLyrics').value.trim() || null });
-  if (error) {
-    await sb.storage.from('songs').remove([path]);
+  const btn = $('upBtn');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  let path = null, cover_path = null, saved = false;
+  try {
+    await metadataTask;
+    if ($('upBtn') !== btn) return;
+    const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = $('upFile').files[0];
+    if (!title || !artist || !file) throw Error('Add a title, an artist, and a file.');
+    const visibility = $('upVisibility')?.value === 'shared' ? 'shared' : 'private';
+    const skipCover = $('skipCover').checked;
+    const cf = skipCover ? null : ($('upCover').files[0] || (detectedCover?.audio === file ? detectedCover.file : null));
+    if (!cf && !skipCover) throw Error('No artwork ready. Find / retry artwork, choose an image, or select Upload without artwork.');
+    const userId = me.id, lyrics = $('upLyrics').value.trim() || null;
+    if (cf) { btn.textContent = 'Saving and verifying artwork…'; cover_path = await uploadVerifiedCover(cf, userId); }
+    btn.textContent = 'Uploading song…';
+    const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
+    path = `${userId}/${crypto.randomUUID()}.${ext}`;
+    const up = await sb.storage.from('songs').upload(path, file, {contentType:file.type});
+    if (up.error) throw up.error;
+    const { error } = await sb.from('songs').insert({title, artist, storage_path:path, cover_path, visibility, lyrics});
+    if (error) throw error;
+    saved = true; toast(cover_path ? 'Song and artwork saved' : 'Song uploaded without artwork');
+    await loadSongs();
+    query = ''; go('search');
+  } catch (e) {
+    if ($('autoMetaStatus')) $('autoMetaStatus').textContent = e.message || 'Upload failed. Please retry.';
+    toast(e.message || 'Upload failed. Please retry.');
+  } finally {
+    if (!saved) {
+      if (path) await sb.storage.from('songs').remove([path]).catch(() => {});
+      if (cover_path) await sb.storage.from('covers').remove([cover_path]).catch(() => {});
+    }
     btn.disabled = false; btn.textContent = 'Upload song';
-    return toast(error.message);
   }
-  toast('Uploaded');
-  await loadSongs();
-  query = ''; go('search');
 }
 
 
@@ -1966,7 +2057,11 @@ $('main').addEventListener('input', e => {
 });
 $('main').addEventListener('change', async e => {
   const t = e.target;
-  if (t.id === 'upFile' && t.files[0]) { await autoFillMusicUpload(t.files[0]); }
+  if (t.id === 'upCover') {
+    const request = ++autoMusicRequest, selected = t.files[0];
+    if (selected) { detectedCover = null; const status = $('autoMetaStatus'); try { const cover = await validateCover(selected); if ($('upCover') === t && request === autoMusicRequest && t.files[0] === selected) { setUploadCover(cover, selected.name); status.textContent = 'Selected artwork is ready.'; } } catch (e) { status.textContent = e.message; } }
+  }
+  else if (t.id === 'upFile' && t.files[0]) { await beginMusicMetadata(t.files[0]); }
   else if (t.id === 'bgFile' && t.files[0]) { await idbSet('bg', t.files[0]); loadBg(); toast('Background set'); }
   else if (t.id === 'pfAv' && t.files[0]) { pfRmAv = false; const el = $('pfAvatar'); el.style.backgroundImage = `url("${URL.createObjectURL(t.files[0])}")`; el.textContent = ''; }
   else if (t.id === 'pfBd' && t.files[0]) { pfRmBd = false; $('pfBanner').style.backgroundImage = `url("${URL.createObjectURL(t.files[0])}")`; }
@@ -2010,6 +2105,7 @@ $('main').addEventListener('click', async e => {
   if (act === 'open') return go('playlist', el.dataset.id);
   if (act === 'create') return createPlaylist();
   if (act === 'upload') return upload();
+  if (act === 'retryart') { metadataTask = retryArtwork(); return metadataTask; }
   if (act === 'logout') return logout();
   if (act === 'saveusername') return changeUsername();
   if (act === 'callfriend') return callFriend({ id: el.dataset.uid, username: el.dataset.name });
@@ -2105,4 +2201,5 @@ checkWebsiteUpdate();
 
 </script>
 </body></html>
+
 
