@@ -302,8 +302,8 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   #lyr .now [data-word].sung { color:var(--green); }
   #lyr p:not(.now) [data-word] { color:inherit; }
 </style>
-<link rel="stylesheet" href="./library-upgrade.css?75789f3921002322">
-<script src="./player-tools.js?75789f3921002322"></script>
+<link rel="stylesheet" href="./library-upgrade.css?c53ddc89f88ee1a1">
+<script src="./player-tools.js?c53ddc89f88ee1a1"></script>
 </head>
 <body>
 
@@ -1515,9 +1515,23 @@ function parseLyrics(txt) {
     const text = rest.replace(/<\d+:\d{1,2}(?:\.\d{1,3})?>/g,'').trim();
     for (const t of times) lines.push({t:Math.max(0,t),text,words:words.length && words.every((w,i)=>i===0 || w.t>=words[i-1].t) ? words.map(w=>({t:Math.max(0,w.t+t-times[0]),text:w.text})) : null});
   }
-  const synced = lines.some(l=>l.t!==null);
-  return {lines:synced ? lines.filter(l=>l.t!==null).sort((a,b)=>a.t-b.t) : lines,synced};
+  const content=lines.filter(l=>l.text.trim()),timed=content.filter(l=>l.t!==null);
+  const coverage=content.length?timed.length/content.length:0;
+  const synced=timed.length>0&&coverage>=.9;
+  const wordSynced=synced&&timed.filter(l=>l.words?.length>1).length/Math.max(1,timed.length)>=.8;
+  const timing=wordSynced?'word':synced?'line':timed.length?'partial':'none';
+  return {lines:synced?lines.filter(l=>l.t!==null).sort((a,b)=>a.t-b.t):lines,synced,coverage,timing,wordSynced};
 }
+function lyricQuality(text){const parsed=parseLyrics(text);return parsed.timing==='word'?3:parsed.timing==='line'?2:parsed.timing==='partial'?1:0;}
+function compatibleLyricText(existing,candidate){
+ if(!String(existing||'').trim())return true;
+ const tokens=text=>parseLyrics(text).lines.map(l=>l.text).join(' ').normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/).filter(Boolean);
+ const a=tokens(existing),b=tokens(candidate);if(!a.length)return true;if(!b.length)return false;
+ const counts=new Map();for(const word of a)counts.set(word,(counts.get(word)||0)+1);let common=0;for(const word of b){const left=counts.get(word)||0;if(left){common++;counts.set(word,left-1);}}
+ return 2*common/(a.length+b.length)>=.55;
+}
+function lyricTimingLabel(text){return ({word:'Word-synced lyrics',line:'Line-synced lyrics',partial:'Incomplete timings — looking for a complete match',none:'Lyrics have no timestamps'})[parseLyrics(text).timing];}
+
 const updHeart = () => { const liked = !!curSong && favs.has(curSong.id); $('fLike').classList.toggle('on', liked); $('fLike').setAttribute('aria-pressed', String(liked)); };
 async function setNowPlaying(s) {
   curSong = s;
@@ -1606,19 +1620,23 @@ async function findSyncedLyrics(title, artist, duration, album = '') {
     else if (exact.status !== 404) throw Error('Lyrics service unavailable. Try again later.');
     const matches = r => !r.instrumental && cleanTrackText(r.trackName) === cleanTrackText(title) && cleanTrackText(r.artistName) === cleanTrackText(artist) && Number.isFinite(r.duration) && Math.abs(r.duration-duration) <= 2 && (r.syncedLyrics || r.hasWordSync);
     results = results.filter(matches);
-    if (!results.length) {
-      const response = await fetch('https://lrclib.net/api/search?'+new URLSearchParams({track_name:title,artist_name:artist}), {signal:AbortSignal.timeout(12000)});
-      if (!response.ok) throw Error('Lyrics service unavailable. Try again later.');
-      const data = await response.json(); results = (Array.isArray(data) ? data : []).filter(matches);
-    }
+    try {
+      const response=await fetch('https://lrclib.net/api/search?'+new URLSearchParams({track_name:title,artist_name:artist}),{signal:AbortSignal.timeout(12000)});
+      if(response.ok){const data=await response.json();results.push(...(Array.isArray(data)?data:[]).filter(matches));}
+      else if(!results.length)throw Error('Lyrics service unavailable. Try again later.');
+    } catch(error){if(!results.length)throw error;}
+    const seen=new Set();results=results.filter(r=>{const id=r.id??JSON.stringify([r.albumName,r.duration,r.syncedLyrics]);if(seen.has(id))return false;seen.add(id);return true;});
     results.sort((a,b) => Number(b.hasWordSync)-Number(a.hasWordSync) || Math.abs(a.duration-duration)-Math.abs(b.duration-duration));
-    for (const record of results.slice(0,3)) {
-      const text = await wordTimedRecord(record) || record.syncedLyrics;
-      if (typeof text !== 'string' || text.length > 500000) continue;
-      const parsed = parseLyrics(text);
-      if (parsed.synced && parsed.lines.length && parsed.lines.every(l => l.t >= 0 && l.t <= duration + 2)) return text;
+    let best=null,bestQuality=0;
+    for (const record of results.slice(0,6)) {
+      const candidates=[await wordTimedRecord(record),record.syncedLyrics];
+      for(const text of candidates){
+        if(typeof text!=='string'||text.length>500000)continue;
+        const parsed=parseLyrics(text),quality=lyricQuality(text);
+        if(parsed.synced&&parsed.lines.length&&parsed.lines.every(l=>l.t>=0&&l.t<=duration+2)&&quality>bestQuality){best=text;bestQuality=quality;if(quality===3)return text;}
+      }
     }
-    return null;
+    return best;
   })();
   if (lyricLookups.size >= 500) lyricLookups.delete(lyricLookups.keys().next().value);
   lyricLookups.set(key,task);
@@ -2211,13 +2229,16 @@ async function upload() {
     const cf = skipCover ? null : ($('upCover').files[0] || (detectedCover?.audio === file ? detectedCover.file : null));
     if (!cf && !skipCover) throw Error('No artwork ready. Find / retry artwork, choose an image, or select Upload without artwork.');
     const userId = me.id; let lyrics = $('upLyrics').value.trim() || null;
-    if (!lyrics) {
+    if (lyricQuality(lyrics)<2) {
+      const previousLyrics=$('upLyrics').value.trim();let matchedLyrics=null;
       btn.textContent = 'Finding synced lyrics…';
-      try { lyrics = await findSyncedLyrics(title,artist,await readAudioDuration(file)); }
+      try { matchedLyrics = await findSyncedLyrics(title,artist,await readAudioDuration(file)); }
       catch (e) { /* Lyrics must never block an otherwise valid music upload. */ }
       if (me?.id !== userId || getUploadAudio() !== file) throw Error('Song selection changed. Please retry.');
-      const manual = $('upLyrics').value.trim(); if (manual) lyrics = manual;
-      else if (lyrics) { $('upLyrics').value = lyrics; detectedUploadLyrics = lyrics; }
+      const manual=$('upLyrics').value.trim();
+      if(manual!==previousLyrics)lyrics=manual||null;
+      else if(matchedLyrics&&lyricQuality(matchedLyrics)>lyricQuality(previousLyrics)&&compatibleLyricText(previousLyrics,matchedLyrics)){lyrics=matchedLyrics;$('upLyrics').value=lyrics;detectedUploadLyrics=lyrics;}
+      else lyrics=previousLyrics||null;
     }
     if(me?.id!==userId||getUploadAudio()!==file)throw Error('Song selection or account changed. Please retry.');
     if (cf) { stage='Saving artwork';btn.textContent = 'Saving and verifying artwork…'; cover_path = await uploadVerifiedCover(cf, userId); }
@@ -2559,9 +2580,9 @@ setInterval(checkWebsiteUpdate, 10000);
 
 
 </script>
-<script src="./audio-import.js?75789f3921002322"></script>
-<script src="./file-pickers.js?75789f3921002322"></script>
-<script src="./library-upgrade.js?75789f3921002322"></script>
+<script src="./audio-import.js?c53ddc89f88ee1a1"></script>
+<script src="./file-pickers.js?c53ddc89f88ee1a1"></script>
+<script src="./library-upgrade.js?c53ddc89f88ee1a1"></script>
 <script>
 try {
   if (!Upgrade) throw Error('Player tools did not load');
