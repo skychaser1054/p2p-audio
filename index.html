@@ -425,6 +425,16 @@ const persistentAuthStorage = {
     try { await authDisk('delete', key); } catch (e) {}
   }
 };
+// Old email verification links can retain an auth error forever in a bookmark.
+// Remove only failed auth callbacks before Supabase inspects the URL, preserving
+// valid sign-in/recovery callbacks and the existing persistent session.
+function clearFailedAuthFragment() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (!params.has('error') || params.has('access_token') || params.has('refresh_token')) return false;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  return true;
+}
+clearFailedAuthFragment();
 const sb = supabase.createClient(
   'https://ueaqlinlpqgoxqlomyow.supabase.co',
   'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT',
