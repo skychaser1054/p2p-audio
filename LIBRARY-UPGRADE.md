@@ -37,3 +37,7 @@ The tests use Node and browser API test doubles. Real Safari playback, headphone
 The lyrics view exposes Find lyrics and Save lyrics, plus a pencil editor and a gear for timing/appearance/file tools. Automatic lookup checks missing lyrics on library load and playback, including shared tracks, with a six-hour retry cooldown for unmatched tracks. Owner saves update the song record; other accounts save a personal copy in local device storage. Existing text is preserved. A match depends on provider coverage and the library scan runs while the app is open.
 
 Copy, cut, paste, native context menus, and user text selection are blocked across the site, including forms. Keyboard typing, file imports, song seeking, and application lyric highlighting remain available. These browser interaction restrictions are not content encryption or DRM.
+
+## File picker appearance
+
+File inputs use matching transparent PNG icons for music, artwork, folders, and documents. Native file inputs remain in place so phone/desktop file dialogs, accepted formats, folder selection, existing upload handlers, and disabled states work as before. Selected filenames and sizes appear on the button. Public PNG data is embedded in the versioned file-picker module for offline use; no upload content enters the app-shell cache.

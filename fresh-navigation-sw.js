@@ -2,7 +2,7 @@
 const SHELL_CACHE='p2p-shell-v3';
 const root=new URL('./',self.location.href);
 const entry=new URL('index.html',root).href;
-const assetURLs=['index.html','player-tools.js','library-upgrade.js','library-upgrade.css'].map(p=>new URL(p,root).href);
+const assetURLs=['index.html','player-tools.js','library-upgrade.js','library-upgrade.css','file-pickers.js'].map(p=>new URL(p,root).href);
 const isApp=url=>url.origin===root.origin&&[root.pathname,root.pathname+'index.html'].includes(url.pathname);
 const isAsset=url=>url.origin===root.origin&&assetURLs.some(a=>new URL(a).pathname===url.pathname);
 const isDependency=url=>['cdn.jsdelivr.net','unpkg.com'].includes(url.hostname)&&/\.(js|css)(?:$|\?)/.test(url.pathname+url.search);

@@ -152,3 +152,27 @@
 html,body,body *{-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important}
 ::selection{background:transparent;color:inherit}
 input,textarea{-webkit-user-select:none!important;user-select:none!important}
+/* PNG file pickers use the existing palette and preserve the native chooser. */
+.png-file-host{display:flex;flex-direction:column;gap:9px;min-width:0}
+.file-picker.png-file-host{padding:0;background:none;border-radius:0}
+.png-file-picker{position:relative;display:block;width:100%;max-width:540px;min-width:0;isolation:isolate;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.015));transition:border-color .2s,background .2s,transform .2s;overflow:hidden;box-sizing:border-box}
+.png-file-visual{display:flex;align-items:center;gap:13px;min-height:82px;padding:15px 17px;pointer-events:none;min-width:0}
+.png-file-art{display:grid;place-items:center;width:46px;height:46px;flex:none;border-radius:12px;background:var(--tint);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.png-file-art img{display:block;width:26px;height:26px;object-fit:contain;opacity:.92}
+.png-file-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px;text-align:left}
+.png-file-heading{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eee;font-size:13px;font-weight:600;line-height:1.3}
+.png-file-caption{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sub);font-size:11px;font-weight:400;line-height:1.4}
+.png-file-chevron{font-size:25px;font-weight:300;color:var(--sub);margin-left:auto;flex:none}
+input[type=file].png-file-input{display:block!important;position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;margin:0!important;padding:0!important;border:0!important;opacity:0!important;cursor:pointer;z-index:2;font-size:16px!important}
+.png-file-input::file-selector-button{height:100%;width:100%;margin:0;border:0;cursor:pointer}
+.png-file-input::-webkit-file-upload-button{height:100%;width:100%;margin:0;border:0;cursor:pointer}
+.png-file-picker:hover{border-color:rgba(255,255,255,.23);background:rgba(255,255,255,.055)}
+.png-file-picker:focus-within{outline:2px solid var(--green);outline-offset:3px}
+.png-file-picker:active{transform:scale(.99)}
+.png-file-picker.has-file{border-color:var(--green)}
+.png-file-picker[data-disabled=true]{opacity:.4;pointer-events:none}
+.tools>.png-file-host{flex:1;min-width:190px}
+.png-file-trigger{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.png-file-trigger img{width:19px;height:19px;object-fit:contain;opacity:.85}
+@media(max-width:820px){.png-file-visual{min-height:76px;padding:13px 14px;gap:11px}.png-file-art{width:42px;height:42px;border-radius:11px}.png-file-heading{font-size:13px}.png-file-caption{font-size:11px}.tools>.png-file-host{min-width:155px;max-width:100%}}
+@media(prefers-reduced-motion:reduce){.png-file-picker{transition:none}.png-file-picker:active{transform:none}}
