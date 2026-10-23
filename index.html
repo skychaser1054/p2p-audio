@@ -278,6 +278,11 @@
 
   #updateAvailable { position:fixed; z-index:99; top:calc(14px + var(--sat)); left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100vw - 24px); border:1px solid #ffffff40; border-radius:20px; background:#222e; backdrop-filter:blur(20px); color:white; padding:10px 14px; font-size:14px; box-shadow:0 8px 28px #0005; }
   #loadUpdate { padding:8px 12px; margin-left:6px; }
+  #fLike, #fAdd, [data-act="fav"], [data-act="add"] { position:relative; overflow:visible; }
+  .music-action-burst::after { content:""; position:absolute; inset:5px; border:2px solid var(--green); border-radius:50%; pointer-events:none; animation:music-action-ring 620ms ease-out both; }
+  .music-action-burst::before { content:"✦"; position:absolute; top:0; right:0; color:var(--green); font-size:15px; line-height:1; pointer-events:none; animation:music-action-spark 620ms ease-out both; text-shadow:0 0 10px var(--green); }
+  @keyframes music-action-ring { 0% { opacity:.85; transform:scale(.6); } 55% { opacity:.5; } 100% { opacity:0; transform:scale(2); } }
+  @keyframes music-action-spark { 0% { opacity:0; transform:translate(0,0) scale(.3); } 25% { opacity:1; } 100% { opacity:0; transform:translate(12px,-18px) scale(1.2) rotate(70deg); } }
 </style>
 </head>
 <body>
@@ -1624,13 +1629,30 @@ $('fNext').onclick = () => $('next').click();
 $('fLoop').onclick = () => { audio.loop = !audio.loop; $('fLoop').classList.toggle('on', audio.loop); };
 $('fShuf').onclick = () => { shuffleOn = !shuffleOn; $('fShuf').classList.toggle('on', shuffleOn); };
 $('fLyr').onclick = () => { const on = $('full').classList.toggle('lyrics'); $('fLyr').textContent = on ? 'Cover' : 'Lyrics'; if (!on) sizeCanvas(cv); };
+const actionBurstTimers = new WeakMap();
 function musicActionFeedback(button, kind) {
   if (!button) return;
   if (!reducedMotion.matches) {
     const frames = kind === 'like'
-      ? [{transform:'scale(1)'},{transform:'scale(1.35) rotate(-12deg)',offset:.4},{transform:'scale(.94) rotate(5deg)',offset:.75},{transform:'scale(1)'}]
-      : [{transform:'scale(1) rotate(0)'},{transform:'scale(1.18) rotate(90deg)',offset:.55},{transform:'scale(1) rotate(180deg)'}];
-    motion(button, frames, 380);
+      ? [{transform:'scale(1)',filter:'drop-shadow(0 0 0 transparent)'},
+         {transform:'scale(1.65) rotate(-18deg)',filter:'drop-shadow(0 0 12px var(--green))',offset:.3},
+         {transform:'scale(.92) rotate(12deg)',offset:.55},
+         {transform:'scale(1.22) rotate(-5deg)',offset:.76},
+         {transform:'scale(1)',filter:'drop-shadow(0 0 0 transparent)'}]
+      : [{transform:'scale(1) rotate(0)',filter:'drop-shadow(0 0 0 transparent)'},
+         {transform:'scale(1.55) rotate(100deg)',filter:'drop-shadow(0 0 12px var(--green))',offset:.35},
+         {transform:'scale(.95) rotate(190deg)',offset:.65},
+         {transform:'scale(1.16) rotate(175deg)',offset:.82},
+         {transform:'scale(1) rotate(180deg)',filter:'drop-shadow(0 0 0 transparent)'}];
+    motion(button, frames, 620);
+    clearTimeout(actionBurstTimers.get(button));
+    button.classList.remove('music-action-burst');
+    void button.offsetWidth; // Restart the decorative burst on repeated taps.
+    button.classList.add('music-action-burst');
+    actionBurstTimers.set(button, setTimeout(() => {
+      button.classList.remove('music-action-burst');
+      actionBurstTimers.delete(button);
+    }, 680));
   }
   if (navigator.maxTouchPoints > 0 && typeof navigator.vibrate === 'function') {
     try { navigator.vibrate(kind === 'like' ? 12 : 8); } catch (e) {}
