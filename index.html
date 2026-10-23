@@ -251,6 +251,38 @@
   @media (prefers-reduced-motion:reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
   }
+
+  /* Translucent playback surfaces inherit the current theme. */
+  #prev, #pp, #next, #fPrev, #fPP, #fNext {
+    display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:44px; height:44px; padding:10px !important; color:#fff;
+    border:1px solid rgba(255,255,255,.25);
+    background:linear-gradient(145deg,rgba(255,255,255,.20),rgba(255,255,255,.05));
+    -webkit-backdrop-filter:blur(18px) saturate(160%); backdrop-filter:blur(18px) saturate(160%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -1px 0 rgba(0,0,0,.12),0 4px 14px rgba(0,0,0,.18);
+  }
+  #pp, #fPP { background:linear-gradient(145deg,rgba(255,255,255,.30),rgba(255,255,255,.10)); }
+  #fPP { width:60px; height:60px; }
+  #prev svg, #pp svg, #next svg, #fPrev svg, #fPP svg, #fNext svg { width:22px; height:22px; fill:currentColor; }
+  #fPP svg { width:28px; height:28px; }
+  #scrubWrap { position:relative; width:100%; max-width:520px; height:56px; flex-shrink:0; }
+  #prog { display:block; width:100%; height:56px; pointer-events:none; }
+  #scrub { position:absolute; inset:0; margin:0; width:100%; height:56px; padding:0; cursor:grab; touch-action:none;
+    appearance:none; -webkit-appearance:none; background:transparent; --position:0%; }
+  #scrub:active { cursor:grabbing; }
+  #scrub::-webkit-slider-runnable-track { height:4px; border-radius:8px; background:linear-gradient(to right,var(--green) var(--position),rgba(255,255,255,.22) var(--position)); }
+  #scrub::-moz-range-track { height:4px; border-radius:8px; background:linear-gradient(to right,var(--green) var(--position),rgba(255,255,255,.22) var(--position)); }
+  #scrub::-webkit-slider-thumb { appearance:none; -webkit-appearance:none; width:16px; height:16px; margin-top:-6px; border-radius:50%; background:#fff; border:1px solid rgba(255,255,255,.7); box-shadow:0 1px 8px #0008; }
+  #scrub::-moz-range-thumb { width:16px; height:16px; border-radius:50%; background:#fff; border:1px solid rgba(255,255,255,.7); box-shadow:0 1px 8px #0008; }
+  #scrub:disabled { opacity:.4; cursor:default; }
+
+  #updateNotice { position:fixed; z-index:100; top:calc(14px + var(--sat)); left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:10px; padding:13px 20px; max-width:calc(100vw - 32px); border-radius:22px;
+    background:linear-gradient(135deg,rgba(45,45,45,.94),rgba(22,22,22,.88)); color:#fff;
+    border:1px solid rgba(255,255,255,.25); box-shadow:inset 0 1px 0 #ffffff26,0 8px 28px #0005;
+    -webkit-backdrop-filter:blur(20px) saturate(160%); backdrop-filter:blur(20px) saturate(160%);
+    font-size:14px; font-weight:650; pointer-events:none; }
+  #updateNotice span { color:var(--green); }
 </style>
 </head>
 <body>
@@ -310,9 +342,9 @@
       <div id="np" role="button" tabindex="0" title="Open now playing"><b id="npT">Nothing playing</b><small id="npA"></small></div>
       <div id="ctl">
         <div class="btns">
-          <button class="ghost" id="prev" aria-label="Previous">⏮</button>
-          <button class="green" id="pp" aria-label="Play or pause">▶</button>
-          <button class="ghost" id="next" aria-label="Next">⏭</button>
+          <button class="ghost" id="prev" aria-label="Previous"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 5h3v14H5zM20 5 9 12l11 7z"/></svg></button>
+          <button class="green" id="pp" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 11 7-11 7Z"/></svg></button>
+          <button class="ghost" id="next" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 5h3v14h-3zM4 5l11 7-11 7z"/></svg></button>
         </div>
         <div id="seekrow"><span id="cur">0:00</span><input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Seek"><span id="dur">0:00</span></div>
       </div>
@@ -336,20 +368,29 @@
     <button class="ico" id="fAdd" aria-label="Add to playlist">＋</button>
     <button class="ico" id="editLyr" aria-label="Edit lyrics">✎</button>
   </div>
-  <canvas id="prog"></canvas>
+  <div id="scrubWrap"><canvas id="prog" aria-hidden="true"></canvas><input id="scrub" type="range" min="0" max="1000" step="0.1" value="0" aria-label="Song position" aria-valuetext="0:00" disabled></div>
   <div class="ftime"><span id="fCur">0:00</span><span id="fDur">0:00</span></div>
   <div class="fctl">
     <button class="ico" id="fShuf" aria-label="Shuffle">⇄</button>
-    <button class="ghost" id="fPrev" aria-label="Previous">⏮</button>
-    <button class="green" id="fPP" aria-label="Play or pause">▶</button>
-    <button class="ghost" id="fNext" aria-label="Next">⏭</button>
+    <button class="ghost" id="fPrev" aria-label="Previous"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 5h3v14H5zM20 5 9 12l11 7z"/></svg></button>
+    <button class="green" id="fPP" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 11 7-11 7Z"/></svg></button>
+    <button class="ghost" id="fNext" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 5h3v14h-3zM4 5l11 7-11 7z"/></svg></button>
     <button class="ico" id="fLoop" aria-label="Repeat this song">↻</button>
   </div>
 </div>
 <dialog id="dlg"></dialog>
 <div id="toast" role="status"></div>
+<div id="updateNotice" role="status" aria-live="polite" hidden><span aria-hidden="true">✓</span> Website updated</div>
 
 <script>
+// Fingerprint the delivered source before runtime rendering changes the DOM.
+// Future HTML, CSS, or JS edits automatically count as a new website version.
+const deliveredVersion = (() => {
+  const source = document.documentElement.outerHTML;
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(16);
+})();
 const sb = supabase.createClient(
   'https://ueaqlinlpqgoxqlomyow.supabase.co',
   'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT'
@@ -1210,8 +1251,17 @@ function seekBy(seconds) {
 $('pp').onclick = togglePlayback;
 $('next').onclick = () => playIndex(nextIndex());
 $('prev').onclick = () => audio.currentTime > 3 ? (audio.currentTime = 0) : playIndex(prevIndex());
-audio.onplay = () => { $('pp').textContent = '⏸'; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; };
-audio.onpause = () => { $('pp').textContent = '▶'; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; };
+
+const playbackGlyphs = {'play': '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 11 7-11 7Z"/></svg>', 'pause': '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 5h4v14H7zM15 5h4v14h-4z"/></svg>'};
+function syncPlaybackButtons() {
+  for (const id of ['pp','fPP']) {
+    $(id).innerHTML = playbackGlyphs[audio.paused ? 'play' : 'pause'];
+    $(id).setAttribute('aria-label', audio.paused ? 'Play' : 'Pause');
+  }
+}
+
+audio.onplay = () => { syncPlaybackButtons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; };
+audio.onpause = () => { syncPlaybackButtons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; };
 audio.onended = () => $('next').click();
 audio.ontimeupdate = () => {
   $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(audio.duration);
@@ -1345,7 +1395,7 @@ function draw() {
   }
   let bass = 0; for (let i = 0; i < 6; i++) bass += bin(i / 60); bass /= 6;
   $('art').style.transform = `scale(${1 + bass * 0.07})`;
-  const PW = pg.width, PH = pg.height, bars = Math.floor(PW / (7 * (devicePixelRatio || 1))), pr = audio.duration ? audio.currentTime / audio.duration : 0;
+  const PW = pg.width, PH = pg.height, bars = Math.floor(PW / (7 * (devicePixelRatio || 1))), pr = audio.duration ? (scrubTime ?? audio.currentTime) / audio.duration : 0;
   pc.clearRect(0, 0, PW, PH);
   for (let i = 0; i < bars; i++) {
     const v = bin(i / bars), h = PH * 0.12 + v * PH * 0.85, x = (i + 0.5) / bars * PW;
@@ -1375,7 +1425,36 @@ $('np').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); openFull
 $('fClose').onclick = closeFull;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('full').hidden) closeFull(); });
 window.addEventListener('resize', () => { if (!$('full').hidden) { sizeCanvas(cv); sizeCanvas(pg); } });
-pg.onclick = e => { if (audio.duration) audio.currentTime = (e.offsetX / pg.clientWidth) * audio.duration; };
+const scrub = $('scrub');
+let scrubActive = false, scrubTime = null;
+function syncScrub() {
+  const duration = audio.duration, valid = Number.isFinite(duration) && duration > 0;
+  scrub.disabled = !valid;
+  if (!scrubActive) scrub.value = valid ? audio.currentTime / duration * 1000 : 0;
+  scrub.style.setProperty('--position', (Number(scrub.value) / 10) + '%');
+  const time = scrubActive && scrubTime !== null ? scrubTime : audio.currentTime;
+  scrub.setAttribute('aria-valuetext', fmt(time) + ' of ' + fmt(duration));
+  $('fCur').textContent = fmt(time); $('fDur').textContent = fmt(duration);
+}
+scrub.addEventListener('pointerdown', () => { scrubActive = !scrub.disabled; });
+scrub.addEventListener('input', () => {
+  if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  scrubActive = true;
+  scrubTime = Math.max(0, Math.min(audio.duration, Number(scrub.value) / 1000 * audio.duration));
+  syncScrub();
+});
+function finishScrub(commit = true) {
+  if (commit && scrubTime !== null && Number.isFinite(audio.duration)) audio.currentTime = Math.max(0, Math.min(audio.duration, scrubTime));
+  scrubActive = false; scrubTime = null; syncScrub();
+}
+scrub.addEventListener('change', () => finishScrub());
+scrub.addEventListener('pointerup', () => finishScrub());
+scrub.addEventListener('pointercancel', () => finishScrub(false));
+scrub.addEventListener('blur', () => finishScrub());
+for (const event of ['timeupdate','loadedmetadata','durationchange','emptied']) audio.addEventListener(event, () => {
+  if (event === 'emptied') { scrubActive = false; scrubTime = null; }
+  syncScrub();
+});
 $('fPP').onclick = () => $('pp').click();
 $('fPrev').onclick = () => $('prev').click();
 $('fNext').onclick = () => $('next').click();
@@ -1384,10 +1463,10 @@ $('fShuf').onclick = () => { shuffleOn = !shuffleOn; $('fShuf').classList.toggle
 $('fLyr').onclick = () => { const on = $('full').classList.toggle('lyrics'); $('fLyr').textContent = on ? 'Cover' : 'Lyrics'; if (!on) sizeCanvas(cv); };
 $('fAdd').onclick = () => curSong && openAddDialog(curSong.id);
 $('fLike').onclick = async () => { if (curSong) { await toggleFav(curSong.id); updHeart(); } };
-audio.addEventListener('play', () => $('fPP').textContent = '⏸');
-audio.addEventListener('pause', () => $('fPP').textContent = '▶');
+audio.addEventListener('play', syncPlaybackButtons);
+audio.addEventListener('pause', syncPlaybackButtons);
 audio.addEventListener('timeupdate', () => {
-  $('fCur').textContent = fmt(audio.currentTime); $('fDur').textContent = fmt(audio.duration);
+  syncScrub();
   if (!lyrSynced) return;
   let k = -1; for (let i = 0; i < lyr.length; i++) { if (lyr[i].t <= audio.currentTime) k = i; else break; }
   if (k !== lyrIdx) {
@@ -1859,6 +1938,20 @@ $('main').addEventListener('click', async e => {
   if (act === 'pfsave') return saveProfile();
 });
 
+function notifyWebsiteUpdate() {
+  try {
+    const key = 'p2p_seen_website_version';
+    if (localStorage.getItem(key) === deliveredVersion) return;
+    localStorage.setItem(key, deliveredVersion);
+  } catch (e) { /* Private browsing can disable persistent storage. */ }
+  const notice = $('updateNotice');
+  notice.hidden = false;
+  motion(notice, [{opacity:0},{opacity:1}],220);
+  setTimeout(() => {
+    motion(notice, [{opacity:1},{opacity:0}],180).then(() => { notice.hidden = true; });
+  }, 5000);
+}
+notifyWebsiteUpdate();
 start();
 </script>
 </body></html>
