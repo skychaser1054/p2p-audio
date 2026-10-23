@@ -7,7 +7,7 @@ The existing theme, account system, storage, social features, and player remain 
 - Queue editing with drag handles and touch-friendly move buttons, play next, add to end, removal, shuffle without repeating a track within a cycle, repeat off/all/one, queue-to-playlist, and saved queue restoration.
 - Paused last-song restoration, saved positions, account-scoped local state with cloud backup, playback speed with pitch preservation, sleep timer, A–B loops, and bookmarks.
 - Album and artist browsing, sorting, selection, multi-song queue/playlist actions, library mixes, and a per-song menu. Large lists render in batches.
-- Song metadata and cover editing, playlist names/covers/order, private share links, and JSON track-list import/export. Imports match existing library files; they do not download audio.
+- Song metadata and cover editing, playlist names/covers/order, and JSON track-list import/export. Imports match existing library files; they do not download audio.
 - Multiple-file/folder imports, reviewable titles/artists, sequential uploads, stage progress, per-file failures, retries, stop-after-current-file, SHA-256 duplicate detection, embedded metadata, verified artwork fallback, and synced-lyrics lookup.
 - Account-scoped offline audio and artwork in IndexedDB, removable downloads, and a cached public app shell. Downloading must complete online first. Offline startup requires a previously saved, valid sign-in and profile. Browser/OS eviction can remove downloads. Signing out removes access until that account signs in again.
 - Listening history, minutes and qualified plays, song/artist/album rankings, listening calendar, CSV export, recording opt-out, and history deletion. Seeking and time suspended in the background are excluded. Older listening cannot be reconstructed. History queries currently show at most the latest 10,000 events in the selected period.
@@ -31,3 +31,9 @@ Artwork and lyrics depend on confident catalog matches and provider availability
 Run `npm test` for queue, restoration, race-condition, metadata, offline isolation, EQ migration, and service-worker tests. Run `npm run build` after changing JS/CSS/worker assets and before publishing to refresh their cache-busting version.
 
 The tests use Node and browser API test doubles. Real Safari playback, headphone behavior, desktop audio effects, and visual layout need device verification; no physical-device results are claimed.
+
+## Lyrics and text interaction update
+
+The lyrics view exposes Find lyrics and Save lyrics, plus a pencil editor and a gear for timing/appearance/file tools. Automatic lookup checks missing lyrics on library load and playback, including shared tracks, with a six-hour retry cooldown for unmatched tracks. Owner saves update the song record; other accounts save a personal copy in local device storage. Existing text is preserved. A match depends on provider coverage and the library scan runs while the app is open.
+
+Copy, cut, paste, native context menus, and user text selection are blocked across the site, including forms. Keyboard typing, file imports, song seeking, and application lyric highlighting remain available. These browser interaction restrictions are not content encryption or DRM.

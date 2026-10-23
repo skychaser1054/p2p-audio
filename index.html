@@ -302,8 +302,8 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   #lyr .now [data-word].sung { color:var(--green); }
   #lyr p:not(.now) [data-word] { color:inherit; }
 </style>
-<link rel="stylesheet" href="./library-upgrade.css?b8c64cc55aae31d3">
-<script src="./player-tools.js?b8c64cc55aae31d3"></script>
+<link rel="stylesheet" href="./library-upgrade.css?f9b73f4b6e3c87c9">
+<script src="./player-tools.js?f9b73f4b6e3c87c9"></script>
 </head>
 <body>
 
@@ -381,7 +381,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   <button class="ghost" id="fLyr">Lyrics</button>
   <div id="stage"><canvas id="viz"></canvas><div id="art"><img id="cover" alt="Album art"></div></div>
   <div id="lyr"></div>
-  <div id="lyricsTools" hidden><button class="ghost" id="lyFind">Find lyrics</button><button class="ghost" id="lyEarlier" aria-label="Show lyrics a quarter second earlier">−0.25s</button><span id="lyricsDelay">+0.00s</span><button class="ghost" id="lyLater" aria-label="Show lyrics a quarter second later">+0.25s</button><button class="ghost" id="lyReset">Reset timing</button></div>
+  <div id="lyricsTools" hidden><button class="ghost" id="lyFind">Find lyrics</button><button class="ghost" id="lySaveCurrent">Save lyrics</button><button class="ghost" id="lyEarlier" aria-label="Show lyrics a quarter second earlier">−0.25s</button><span id="lyricsDelay">+0.00s</span><button class="ghost" id="lyLater" aria-label="Show lyrics a quarter second later">+0.25s</button><button class="ghost" id="lyReset">Reset timing</button></div>
   <div class="finfo">
     <div><b id="fT"></b><br><small id="fA"></small></div>
     <button class="ghost" id="foregroundEffectsToggle" type="button" aria-label="Toggle visual effects" aria-pressed="true" style="font-size:11px;padding:6px 9px;white-space:nowrap;flex-shrink:0">FX On</button>
@@ -1523,7 +1523,7 @@ async function setNowPlaying(s) {
   curSong = s;
   $('fT').textContent = s.title; $('fA').textContent = s.artist;
   refreshLyricsView(s);
-  $('editLyr').style.display = s.owner === me.id ? '' : 'none';
+  $('editLyr').style.display = '';
   const img = $('cover'); img.style.visibility = 'hidden'; img.removeAttribute('src');
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist });
   if (s.cover_path) {
@@ -1715,22 +1715,9 @@ function updateLyricHighlight() {
 $('lyEarlier').onclick = () => adjustLyricsDelay(-.25);
 $('lyLater').onclick = () => adjustLyricsDelay(.25);
 $('lyReset').onclick = () => adjustLyricsDelay(0);
-$('lyFind').onclick = async () => {
-  const song = curSong; if (!song) return;
-  if (song.lyrics?.trim()) return toast('Existing lyrics are preserved. Use the pencil to edit or sync them.');
-  $('lyFind').disabled = true;
-  lyricLookups.clear();
-  try {
-    const text = await findSyncedLyrics(song.title,song.artist,await existingSongDuration(song));
-    if (curSong !== song || song.lyrics?.trim()) return;
-    if (!text) return toast('No confident synced-lyrics match found.');
-    if (song.owner === me?.id) {
-      const result = await fillMissingSongMetadata(song,me.id,true);
-      if (result.error) toast(result.error); else toast(song.lyrics ? 'Synced lyrics saved' : 'Lyrics could not be saved.');
-    } else { song.lyrics = text; refreshLyricsView(song); toast('Lyrics loaded for this session'); }
-  } catch (e) { toast(e.message); }
-  finally { $('lyFind').disabled = false; }
-};
+$('lyFind').onclick = async () => {const button=$('lyFind');button.disabled=true;try{await Upgrade.findLyrics(curSong);}finally{button.disabled=false;}};
+$('lySaveCurrent').onclick = () => Upgrade.saveCurrentLyrics();
+
 onMusic('loadedmetadata', () => {
   if (curSong && Number.isFinite(audio.duration) && audio.duration > 0) {
     trackDurations.set(curSong.id,audio.duration);
@@ -1912,10 +1899,10 @@ onMusic('pause', syncPlaybackButtons);
 onMusic('timeupdate', () => { syncScrub(); updateLyricHighlight(); });
 $('lyr').onclick = e => { const p = e.target.closest('p[data-i]'); if (p && lyrSynced && lyr[p.dataset.i]) audio.currentTime = Math.max(0, Math.min(audio.duration || Infinity, lyr[p.dataset.i].t + lyricsDelay())); };
 $('editLyr').onclick = () => {
-  const editingSong = curSong; if (!editingSong || editingSong.owner !== me?.id) return;
+  const editingSong = curSong; if (!editingSong || !me) return;
   const d = $('dlg');
   d.innerHTML = `<h3 style="margin-top:0">Lyrics</h3>
-    <p class="sub" style="max-width:340px">Paste plain lyrics, or timed lines like [01:23.50] words. Sync lets you stamp each line as the song plays.</p>
+    <p class="sub" style="max-width:340px">Type plain lyrics, or timed lines like [01:23.50] words. Sync lets you stamp each line as the song plays.</p>
     <textarea id="lyTxt" rows="10"></textarea><div id="syncBox" style="margin:10px 0"></div>
     <p><button class="green" id="lySave">Save</button> <button class="ghost" id="lySync">Sync</button> <button class="ghost" id="lyClose">Close</button></p>`;
   $('lyTxt').value = editingSong.lyrics || '';
@@ -1924,8 +1911,7 @@ $('editLyr').onclick = () => {
     const txt = $('lyTxt').value, button = $('lySave');
     button.disabled = true;
     try {
-      const { data: savedRows, error } = await sb.from('songs').update({ lyrics: txt }).eq('id', editingSong.id).eq('owner', me.id).select('id');
-      if (error || !savedRows?.length) throw Error(error?.message || 'Lyrics were not saved. Please retry.');
+      await Upgrade.saveLyrics(editingSong,txt);
       editingSong.lyrics = txt;
       const librarySong = songs.find(s=>s.id===editingSong.id); if (librarySong) librarySong.lyrics = txt;
       if (curSong?.id===editingSong.id) refreshLyricsView(editingSong);
@@ -2561,7 +2547,7 @@ setInterval(checkWebsiteUpdate, 10000);
 
 
 </script>
-<script src="./library-upgrade.js?b8c64cc55aae31d3"></script>
+<script src="./library-upgrade.js?f9b73f4b6e3c87c9"></script>
 <script>
 try {
   if (!Upgrade) throw Error('Player tools did not load');
