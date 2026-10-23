@@ -222,6 +222,35 @@
     .song, .prow { padding:6px 4px; }
     .ico { padding:8px 10px; }
   }
+
+  /* Motion changes behavior without replacing the user's theme. */
+  :root { --ease-out:cubic-bezier(.22,1,.36,1); }
+  button, [role=button], .song, .prow, .row {
+    transition:transform 160ms var(--ease-out), background-color 180ms ease, color 180ms ease, opacity 160ms ease, filter 160ms ease;
+  }
+  button:active:not(:disabled), [role=button]:active { transform:scale(.96); }
+  button:disabled { cursor:default; opacity:.55; }
+  input, textarea, select { transition:border-color 160ms ease, box-shadow 160ms ease; }
+  #main, #navLists, .chatmessages, #lyr { -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
+  #miniProg { transition:width 220ms linear; }
+  #lyr p { transition:color 200ms ease; }
+  #incomingbar.on, #callbar.on { animation:surface-in 240ms var(--ease-out); }
+  dialog[open] { animation:surface-in 260ms var(--ease-out); }
+  dialog[open]::backdrop { animation:backdrop-in 200ms ease; }
+  @keyframes surface-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes backdrop-in { from { opacity:0; } to { opacity:1; } }
+  @media (hover:hover) and (pointer:fine) {
+    .card:hover { transform:translateY(-3px); }
+    .qt:hover { transform:translateY(-2px); }
+    button:hover:not(:disabled) { filter:brightness(1.08); }
+  }
+  @media (pointer:coarse) {
+    .ico, .ib, .chatlike { min-width:44px; min-height:44px; }
+    .row button { min-height:44px; }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+  }
 </style>
 </head>
 <body>
@@ -332,8 +361,33 @@ const isPhone = () => matchMedia('(max-width:820px)').matches;
 const PREFIX = 'skychaser-audio-';
 const pid = uid => PREFIX + uid;
 
+
+/* Cancel superseded motion so rapid interactions remain responsive. */
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const motions = new WeakMap();
+function motion(el, frames, duration = 220) {
+  if (!el) return Promise.resolve();
+  motions.get(el)?.cancel();
+  if (reducedMotion.matches || !el.animate) return Promise.resolve();
+  const animation = el.animate(frames, {duration, easing:'cubic-bezier(.22,1,.36,1)'});
+  motions.set(el, animation);
+  return animation.finished.catch(() => {}).finally(() => {
+    if (motions.get(el) === animation) motions.delete(el);
+  });
+}
+function closeDialog(d) {
+  if (!d.open || d.dataset.closing) return;
+  d.dataset.closing = '1';
+  motion(d, [{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(16px)'}],140)
+    .then(() => { d.close(); delete d.dataset.closing; });
+}
+document.querySelectorAll('dialog').forEach(d => {
+  d.addEventListener('cancel', e => { e.preventDefault(); closeDialog(d); });
+});
+
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  motion(t, [{opacity:0},{opacity:1}],160);
   clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2600);
 }
 
@@ -489,6 +543,7 @@ function buildChrome() {
 
 /* ---------- navigation ---------- */
 function go(v, arg, noPush) {
+  if (view === v && viewArg === (arg || null)) return;
   view = v; viewArg = arg || null;
   if (!noPush) history.pushState({ v, arg: viewArg }, '');
   render();
@@ -504,9 +559,9 @@ function openCreateSheet() {
     <p><button class="green" id="shPl" style="width:100%;padding:14px">New playlist</button></p>
     <p><button class="ghost" id="shUp" style="width:100%;padding:14px">Upload a song</button></p>
     <p><button class="ghost" id="shX" style="width:100%;border:0">Cancel</button></p>`;
-  $('shPl').onclick = () => { d.close(); go('create'); };
-  $('shUp').onclick = () => { d.close(); go('upload'); };
-  $('shX').onclick = () => d.close();
+  $('shPl').onclick = () => { closeDialog(d); go('create'); };
+  $('shUp').onclick = () => { closeDialog(d); go('upload'); };
+  $('shX').onclick = () => closeDialog(d);
   d.showModal();
 }
 $('nav').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) navTo(b.dataset.v, b.dataset.arg); });
@@ -516,7 +571,7 @@ $('ptSet').onclick = () => go('settings');
 $('ptBack').onclick = () => history.back();
 window.addEventListener('popstate', e => {
   const st = e.state || {}, wasFull = !$('full').hidden;
-  if (!st.full) $('full').hidden = true;
+  if (!st.full && wasFull) hideFull();
   if (st.v && !(wasFull && !st.full)) { view = st.v; viewArg = st.arg || null; render(); }
 });
 
@@ -632,14 +687,16 @@ function fill(id, items, make, emptyText) {
 /* ---------- views ---------- */
 async function render(keep) {
   const tok = ++renderTok, m = $('main'), st = m.scrollTop;
-  if (!keep) m.scrollTop = 0;
   renderNavLists(); markNav();
   lists = {};
   const [html, after] = await build(view);
   if (tok !== renderTok) return;
+  if (!keep) await motion(m, [{opacity:1},{opacity:0}],90);
+  if (tok !== renderTok) return;
   m.innerHTML = html;
-  if (keep) m.scrollTop = st;
+  m.scrollTop = keep ? st : 0;
   if (after) after();
+  if (!keep) motion(m, [{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'translateY(0)'}]);
 }
 
 async function build(v) {
@@ -749,7 +806,7 @@ async function build(v) {
 
   if (v === 'settings') {
     return [settingsHtml() +
-      `<h3>Account</h3><p class="sub">Signed in as @${esc(me.username)}</p>
+      `<h3>Keyboard shortcuts</h3><p class="sub">Space / K: play or pause · ← / →: seek 10 seconds · Shift + ← / →: previous / next song · M: mute music · F: now playing · Escape: close player. Shortcuts stay out of the way while typing or using buttons.</p><p class="sub">Headphone and lock-screen play, pause, track, and seek controls work when supported by your browser and device.</p><h3>Account</h3><p class="sub">Signed in as @${esc(me.username)}</p>
        <div class="form"><label class="fl">Change username<input id="newUsername" type="text" value="${esc(me.username)}" maxlength="20" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
        <small>3–20 characters: lowercase letters, numbers, and underscores.</small><button class="green" data-act="saveusername" style="align-self:flex-start">Save username</button><small id="usernameMsg" aria-live="polite"></small></div>
        <p><button class="ghost" data-act="logout">Log out</button></p>`];
@@ -1118,17 +1175,21 @@ audio.crossOrigin = 'anonymous';
 // iOS Safari is more reliable with direct HTMLMediaElement output.
 // Web Audio graph processing may suspend when the screen locks.
 const safariIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let shuffleOn = false;
+let shuffleOn = false, playRequest = 0;
 async function playIndex(i) {
   const s = queue[i]; if (!s) return;
-  qi = i; curId = s.id;
+  const request = ++playRequest;
+  qi = i;
   const { data, error } = await sb.storage.from('songs').createSignedUrl(s.storage_path, 3600);
+  if (request !== playRequest) return;
   if (error) return toast('Could not load this song: ' + error.message);
+  curId = s.id;
   if (!safariIOS) ensureGraph();
   audio.src = data.signedUrl;
-  audio.play().catch(() => toast('Tap play to start'));
+  audio.play().catch(() => { if (request === playRequest) toast('Tap play to start'); });
   $('npT').textContent = s.title; $('npA').textContent = s.artist;
   setNowPlaying(s); recordPlay(s);
+  [$('np'), document.querySelector('.finfo')].forEach(el => motion(el, [{opacity:.3,transform:'translateY(5px)'},{opacity:1,transform:'translateY(0)'}]));
   document.querySelectorAll('.song').forEach(el => el.classList.toggle('cur', el.dataset.sid === curId));
 }
 function recordPlay(s) {
@@ -1137,7 +1198,16 @@ function recordPlay(s) {
 }
 const nextIndex = () => shuffleOn && queue.length > 1 ? Math.floor(Math.random() * queue.length) : (qi + 1 < queue.length ? qi + 1 : 0);
 const prevIndex = () => qi > 0 ? qi - 1 : queue.length - 1;
-$('pp').onclick = () => { if (!audio.src) return; audio.paused ? audio.play() : audio.pause(); };
+function resumeAudio() {
+  if (!audio.src) return;
+  if (!safariIOS) ensureGraph();
+  return audio.play().catch(() => toast('Tap play to start'));
+}
+function togglePlayback() { if (audio.paused) resumeAudio(); else audio.pause(); }
+function seekBy(seconds) {
+  if (Number.isFinite(audio.duration)) audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + seconds));
+}
+$('pp').onclick = togglePlayback;
 $('next').onclick = () => playIndex(nextIndex());
 $('prev').onclick = () => audio.currentTime > 3 ? (audio.currentTime = 0) : playIndex(prevIndex());
 audio.onplay = () => { $('pp').textContent = '⏸'; if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; };
@@ -1155,10 +1225,28 @@ $('seek').oninput = e => { if (audio.duration) audio.currentTime = e.target.valu
 /* lock-screen and headset controls */
 if ('mediaSession' in navigator) {
   const h = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
-  h('play', () => audio.play()); h('pause', () => audio.pause());
+  h('play', resumeAudio); h('pause', () => audio.pause());
+  h('stop', () => { audio.pause(); if (audio.src) audio.currentTime = 0; });
+  h('seekbackward', d => seekBy(-(d.seekOffset || 10)));
+  h('seekforward', d => seekBy(d.seekOffset || 10));
   h('previoustrack', () => $('prev').click()); h('nexttrack', () => $('next').click());
-  h('seekto', d => { if (d.seekTime != null) audio.currentTime = d.seekTime; });
+  h('seekto', d => { if (d.seekTime != null) audio.currentTime = Math.max(0, Math.min(Number.isFinite(audio.duration) ? audio.duration : d.seekTime, d.seekTime)); });
 }
+
+
+// Leave typing, native controls, dialogs, and browser shortcuts alone.
+document.addEventListener('keydown', e => {
+  if (e.defaultPrevented || e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || !me) return;
+  if (document.querySelector('dialog[open]')) return;
+  const target = e.target;
+  if (target.closest('input, textarea, select, button, a, audio, video, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="slider"]')) return;
+  const key = e.key.toLowerCase();
+  if (key === ' ' || key === 'k') { e.preventDefault(); togglePlayback(); }
+  else if (key === 'arrowright') { e.preventDefault(); if (e.shiftKey) $('next').click(); else seekBy(10); }
+  else if (key === 'arrowleft') { e.preventDefault(); if (e.shiftKey) $('prev').click(); else seekBy(-10); }
+  else if (key === 'm') { e.preventDefault(); audio.muted = !audio.muted; toast(audio.muted ? 'Music muted' : 'Music unmuted'); }
+  else if (key === 'f') { e.preventDefault(); $('full').hidden ? openFull() : closeFull(); }
+});
 
 /* ---------- now playing ---------- */
 let actx, analyser, fdata, curSong = null, lyr = [], lyrSynced = false, lyrIdx = -1;
@@ -1267,13 +1355,23 @@ function draw() {
 }
 draw();
 function openFull() {
-  if (!curSong) return;
+  if (!curSong || !$('full').hidden) return;
+  ++fullCloseRequest;
   history.pushState({ v: view, arg: viewArg, full: 1 }, '');
   $('full').hidden = false; sizeCanvas(cv); sizeCanvas(pg);
+  motion($('full'), [{opacity:0,transform:'translateY(28px)'},{opacity:1,transform:'translateY(0)'}],280);
+  $('fClose').focus({preventScroll:true});
 }
-function closeFull() { if (history.state && history.state.full) history.back(); else $('full').hidden = true; }
+let fullCloseRequest = 0;
+async function hideFull() {
+  const request = ++fullCloseRequest;
+  await motion($('full'), [{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(28px)'}],180);
+  if (request !== fullCloseRequest || history.state?.full) return;
+  $('full').hidden = true; $('np').focus({preventScroll:true});
+}
+function closeFull() { if (history.state?.full) history.back(); else hideFull(); }
 $('np').onclick = openFull;
-$('np').onkeydown = e => { if (e.key === 'Enter') openFull(); };
+$('np').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); openFull(); } };
 $('fClose').onclick = closeFull;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('full').hidden) closeFull(); });
 window.addEventListener('resize', () => { if (!$('full').hidden) { sizeCanvas(cv); sizeCanvas(pg); } });
@@ -1306,12 +1404,12 @@ $('editLyr').onclick = () => {
     <textarea id="lyTxt" rows="10"></textarea><div id="syncBox" style="margin:10px 0"></div>
     <p><button class="green" id="lySave">Save</button> <button class="ghost" id="lySync">Sync</button> <button class="ghost" id="lyClose">Close</button></p>`;
   $('lyTxt').value = curSong.lyrics || '';
-  $('lyClose').onclick = () => d.close();
+  $('lyClose').onclick = () => closeDialog(d);
   $('lySave').onclick = async () => {
     const txt = $('lyTxt').value;
     const { error } = await sb.from('songs').update({ lyrics: txt }).eq('id', curSong.id);
     if (error) return toast(error.message);
-    curSong.lyrics = txt; setNowPlaying(curSong); d.close(); toast('Lyrics saved');
+    curSong.lyrics = txt; setNowPlaying(curSong); closeDialog(d); toast('Lyrics saved');
   };
   $('lySync').onclick = () => {
     const lines = $('lyTxt').value.split(/\r?\n/).map(l => l.replace(/^\s*\[[^\]]*\]\s*/, '').trim()).filter(Boolean);
@@ -1402,11 +1500,11 @@ function openAddDialog(songId) {
     '<p><button id="dlgClose">Close</button></p>';
   d.querySelectorAll('[data-pid]').forEach(b => b.onclick = async () => {
     const { error } = await sb.from('playlist_songs').insert({ playlist_id: b.dataset.pid, song_id: songId });
-    d.close();
+    closeDialog(d);
     toast(error ? (error.code === '23505' ? 'Already in that playlist' : error.message) : 'Added');
     if (!error && view === 'playlist' && viewArg === b.dataset.pid) render(true);
   });
-  $('dlgClose').onclick = () => d.close();
+  $('dlgClose').onclick = () => closeDialog(d);
   d.showModal();
 }
 async function createPlaylist() {
@@ -1764,3 +1862,4 @@ $('main').addEventListener('click', async e => {
 start();
 </script>
 </body></html>
+
