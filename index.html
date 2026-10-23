@@ -275,6 +275,9 @@
     -webkit-backdrop-filter:blur(20px) saturate(160%); backdrop-filter:blur(20px) saturate(160%);
     font-size:14px; font-weight:650; pointer-events:none; }
   #updateNotice span { color:var(--green); }
+
+  #updateAvailable { position:fixed; z-index:99; top:calc(14px + var(--sat)); left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100vw - 24px); border:1px solid #ffffff40; border-radius:20px; background:#222e; backdrop-filter:blur(20px); color:white; padding:10px 14px; font-size:14px; box-shadow:0 8px 28px #0005; }
+  #loadUpdate { padding:8px 12px; margin-left:6px; }
 </style>
 </head>
 <body>
@@ -372,20 +375,60 @@
 </div>
 <dialog id="dlg"></dialog>
 <div id="toast" role="status"></div>
+<div id="updateAvailable" hidden role="status">An update is ready. <button id="loadUpdate">Update now</button></div>
 <div id="updateNotice" role="status" aria-live="polite" hidden><span aria-hidden="true">✓</span> Website updated</div>
 
 <script>
 // Fingerprint the delivered source before runtime rendering changes the DOM.
 // Future HTML, CSS, or JS edits automatically count as a new website version.
-const deliveredVersion = (() => {
-  const source = document.documentElement.outerHTML;
+function sourceVersion(doc) {
+  const source = Array.from(doc.querySelectorAll('style, script')).map(el => el.getAttribute('src') || el.textContent).join('\n');
   let hash = 2166136261;
   for (let i = 0; i < source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619);
   return (hash >>> 0).toString(16);
-})();
+}
+const deliveredVersion = sourceVersion(document);
+// Keep the existing Supabase storage key, with an IndexedDB fallback for Safari.
+function authDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('p2p-auth', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('session');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function authDisk(method, key, value) {
+  const db = await authDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('session', method === 'get' ? 'readonly' : 'readwrite');
+      const store = tx.objectStore('session');
+      const request = method === 'get' ? store.get(key) : method === 'put' ? store.put(value, key) : store.delete(key);
+      tx.oncomplete = () => resolve(request.result ?? null);
+      tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+const persistentAuthStorage = {
+  async getItem(key) {
+    try { const value = localStorage.getItem(key); if (value !== null) return value; } catch (e) {}
+    try { return await authDisk('get', key); } catch (e) { return null; }
+  },
+  async setItem(key, value) {
+    let saved = false;
+    try { localStorage.setItem(key, value); saved = true; } catch (e) {}
+    try { await authDisk('put', key, value); saved = true; } catch (e) {}
+    if (!saved) console.warn('This browser could not persist the sign-in session.');
+  },
+  async removeItem(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+    try { await authDisk('delete', key); } catch (e) {}
+  }
+};
 const sb = supabase.createClient(
   'https://ueaqlinlpqgoxqlomyow.supabase.co',
-  'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT'
+  'sb_publishable_PMTk-r5GwbmaxK2Bw-KceA_rIF7dGGT',
+  { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, storage:persistentAuthStorage, storageKey:'sb-ueaqlinlpqgoxqlomyow-auth-token' } }
 );
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -508,18 +551,59 @@ async function signup() {
   const { error } = await sb.auth.signUp({ email: $('email').value, password: $('pass').value });
   $('msg').textContent = error ? error.message : 'Account created. Confirm your email if asked, then log in.';
 }
-async function logout() { await sb.auth.signOut(); location.reload(); }
-
-async function start() {
-  const { data } = await sb.auth.getSession();
-  if (!data.session) return show('loginBox');
-  me = data.session.user;
-  const { data: p } = await sb.from('profiles')
+let startingSession = null, appUserId = null, authGeneration = 0;
+async function logout() {
+  const { error } = await sb.auth.signOut({scope:'local'});
+  if (error) return toast(error.message);
+  location.reload();
+}
+function sessionError(message) {
+  if (appUserId) { toast(message); return; }
+  show('loading');
+  $('loading').style.display = 'block';
+  $('loading').textContent = message;
+  const retry = document.createElement('button');
+  retry.textContent = 'Retry'; retry.onclick = () => start();
+  $('loading').appendChild(document.createElement('br')); $('loading').appendChild(retry);
+}
+function start() {
+  if (startingSession) return startingSession;
+  startingSession = restoreSession().catch(e => sessionError('Could not restore your session. Check your connection and retry.'))
+    .finally(() => { startingSession = null; });
+  return startingSession;
+}
+async function restoreSession() {
+  const generation = authGeneration;
+  const { data, error } = await sb.auth.getSession();
+  if (generation !== authGeneration) return;
+  if (error) return sessionError('Could not restore your session. Check your connection and retry.');
+  if (!data.session) { me = null; return show('loginBox'); }
+  if (appUserId === data.session.user.id) return;
+  me = {...data.session.user};
+  const { data: p, error: profileError } = await sb.from('profiles')
     .select('username,bio,avatar_path,backdrop_path,fav_songs').eq('id', me.id).maybeSingle();
+  if (generation !== authGeneration) return;
+  if (profileError) return sessionError('You are signed in, but your profile could not load. Please retry.');
   if (!p) return show('nameBox');
   prof = p; me.username = p.username;
-  openApp();
+  appUserId = me.id;
+  try { await openApp(); } catch (e) { appUserId = null; throw e; }
 }
+// Defer work outside the auth callback to avoid holding Supabase's auth lock.
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT') {
+    ++authGeneration;
+    appUserId = null; me = null;
+    if (peer) peer.destroy();
+    audio.pause();
+    show('loginBox');
+  } else if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+    setTimeout(() => start(), 0);
+  }
+});
+window.addEventListener('online', () => start());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) start(); });
+
 async function changeUsername() {
   const field = $('newUsername'), msg = $('usernameMsg');
   if (!field || !msg) return;
@@ -548,6 +632,7 @@ async function saveName() {
   }
   prof = { username: name, bio: null, avatar_path: null, backdrop_path: null, fav_songs: [] };
   me.username = name;
+  appUserId = me.id;
   openApp();
 }
 
@@ -576,7 +661,7 @@ function buildChrome() {
 
 /* ---------- navigation ---------- */
 function go(v, arg, noPush) {
-  if (view === v && viewArg === (arg || null)) return;
+  if (view === v && viewArg === (arg || null)) return render(true);
   view = v; viewArg = arg || null;
   if (!noPush) history.pushState({ v, arg: viewArg }, '');
   render();
@@ -1962,8 +2047,46 @@ function notifyWebsiteUpdate() {
     motion(notice, [{opacity:1},{opacity:0}],180).then(() => { notice.hidden = true; });
   }, 5000);
 }
+let updateChecking = false, updateCheckedAt = 0, pendingVersion = null, formEdited = false;
+document.addEventListener('input', e => { if (e.isTrusted && e.target.closest('input:not([type=range]), textarea, [contenteditable=true]')) formEdited = true; });
+function loadWebsiteUpdate() {
+  if (!pendingVersion) return;
+  const url = new URL(location.href);
+  url.searchParams.set('_appv', pendingVersion);
+  try { sessionStorage.setItem('p2p_update_attempt', pendingVersion); } catch (e) {}
+  location.replace(url.href);
+}
+$('loadUpdate').onclick = loadWebsiteUpdate;
+async function checkWebsiteUpdate() {
+  if (document.hidden || updateChecking || Date.now() - updateCheckedAt < 30000 || navigator.onLine === false) return;
+  updateChecking = true; updateCheckedAt = Date.now();
+  try {
+    const url = new URL(location.href);
+    // Fetch only the app document; never send OAuth codes to the update probe.
+    url.search = ''; url.hash = ''; url.searchParams.set('_check', Date.now());
+    const response = await fetch(url.href, {cache:'no-store', signal:AbortSignal.timeout(10000)});
+    if (!response.ok) return;
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    if (!doc.querySelector('#appBox') || !doc.querySelector('#audio')) return;
+    const version = sourceVersion(doc);
+    if (version === deliveredVersion) { $('updateAvailable').hidden = true; return; }
+    pendingVersion = version;
+    let attempted = false;
+    try { attempted = sessionStorage.getItem('p2p_update_attempt') === version; } catch (e) { attempted = true; }
+    const busy = current || incomingCall || !audio.paused || formEdited || document.querySelector('dialog[open]') || new URLSearchParams(location.search).has('code');
+    if (!busy && !attempted) loadWebsiteUpdate();
+    else $('updateAvailable').hidden = false;
+  } catch (e) { /* Offline or host unavailable: keep the current app running. */ }
+  finally { updateChecking = false; }
+}
+window.addEventListener('pageshow', () => checkWebsiteUpdate());
+window.addEventListener('online', () => checkWebsiteUpdate());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkWebsiteUpdate(); });
+setInterval(checkWebsiteUpdate, 60000);
 notifyWebsiteUpdate();
 start();
+checkWebsiteUpdate();
+
 </script>
 </body></html>
 
