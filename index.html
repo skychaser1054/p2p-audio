@@ -602,6 +602,11 @@ async function restoreSession() {
 // Defer work outside the auth callback to avoid holding Supabase's auth lock.
 sb.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT') {
+    savePlaybackState(true);
+    playbackOwner = null; pendingResume = null; ++playRequest;
+    audio.pause(); audio.removeAttribute('src');
+    curSong = null; curId = null; queue = []; qi = -1;
+    $('npT').textContent = 'Nothing playing'; $('npA').textContent = '';
     ++authGeneration;
     appUserId = null; me = null;
     if (peer) peer.destroy();
@@ -653,6 +658,7 @@ async function openApp() {
   $('main').innerHTML = '<p class="sub">Loading…</p>';
   initPeer();
   await Promise.all([loadSongs(), loadFavs(), loadRecent(), refreshFriends(), loadPlaylists()]);
+  await restoreLastPlayback();
   history.replaceState({ v: 'home', arg: null }, '');
   go(new URLSearchParams(location.search).has('code') || new URLSearchParams(location.search).has('error') ? 'music' : 'home', null, true);
   setInterval(refreshFriends, 10000);
@@ -1305,23 +1311,71 @@ audio.crossOrigin = 'anonymous';
 // iOS Safari is more reliable with direct HTMLMediaElement output.
 // Web Audio graph processing may suspend when the screen locks.
 const safariIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let shuffleOn = false, playRequest = 0;
-async function playIndex(i) {
+let shuffleOn = false, playRequest = 0, playbackOwner = null, pendingResume = null, audioUrlExpiresAt = 0, lastPlaybackSave = 0;
+function playbackKey() { return me?.id ? 'p2p_last_playback_' + me.id : null; }
+function savePlaybackState(force = false) {
+  const key = playbackKey();
+  if (!key || playbackOwner !== me.id || !curSong || !Number.isFinite(audio.currentTime)) return;
+  if (!force && Date.now() - lastPlaybackSave < 2000) return;
+  const position = pendingResume?.time ?? audio.currentTime;
+  try {
+    localStorage.setItem(key, JSON.stringify({songId:curSong.id, position:Math.max(0,position), savedAt:Date.now()}));
+    lastPlaybackSave = Date.now();
+  } catch (e) {}
+}
+function applyResumePosition() {
+  if (!pendingResume || audio.readyState < 1 || !Number.isFinite(audio.duration)) return;
+  const saved = pendingResume;
+  if (saved.id !== curId) return;
+  audio.currentTime = Math.max(0, Math.min(saved.time, Math.max(0,audio.duration - .1)));
+  pendingResume = null;
+  $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(audio.duration);
+  const pct = audio.duration > 0 ? audio.currentTime / audio.duration * 100 : 0;
+  $('seek').value = pct; $('miniProg').style.width = pct + '%';
+  syncScrub(); savePlaybackState(true);
+}
+async function restoreLastPlayback() {
+  if (curSong && playbackOwner === me?.id) return;
+  let state;
+  try { state = JSON.parse(localStorage.getItem(playbackKey()) || 'null'); } catch (e) { return; }
+  if (!state || typeof state.songId !== 'string' || !Number.isFinite(state.position) || state.position < 0) return;
+  const song = songs.find(s => s.id === state.songId);
+  if (!song) return; // Deleted or inaccessible songs must never be restored.
+  queue = songs.slice();
+  await playIndex(queue.indexOf(song), {autoplay:false, position:state.position});
+}
+async function playIndex(i, options = {}) {
   const s = queue[i]; if (!s) return;
-  const request = ++playRequest;
-  qi = i;
+  savePlaybackState(true);
+  const request = ++playRequest, userId = me?.id;
   const { data, error } = await sb.storage.from('songs').createSignedUrl(s.storage_path, 3600);
-  if (request !== playRequest) return;
+  if (request !== playRequest || me?.id !== userId) return;
   if (error) return toast('Could not load this song: ' + error.message);
-  curId = s.id;
-  if (!safariIOS) ensureGraph();
-  audio.src = data.signedUrl;
-  audio.play().catch(() => { if (request === playRequest) toast('Tap play to start'); });
+  qi = i; curId = s.id; playbackOwner = userId;
+  pendingResume = {id:s.id, time:Number.isFinite(options.position) ? Math.max(0, options.position) : 0};
+  audio.pause();
+  audio.src = data.signedUrl; audioUrlExpiresAt = Date.now() + 3500000;
   $('npT').textContent = s.title; $('npA').textContent = s.artist;
-  setNowPlaying(s); recordPlay(s);
+  setNowPlaying(s);
+  $('cur').textContent = fmt(pendingResume.time); $('fCur').textContent = fmt(pendingResume.time);
+  applyResumePosition(); savePlaybackState(true);
+  if (options.autoplay !== false) {
+    if (!safariIOS) ensureGraph();
+    audio.play().catch(() => { if (request === playRequest) toast('Tap play to start'); });
+    recordPlay(s);
+  } else {
+    syncPlaybackButtons();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  }
   [$('np'), document.querySelector('.finfo')].forEach(el => motion(el, [{opacity:.3,transform:'translateY(5px)'},{opacity:1,transform:'translateY(0)'}]));
   document.querySelectorAll('.song').forEach(el => el.classList.toggle('cur', el.dataset.sid === curId));
 }
+audio.addEventListener('loadedmetadata', applyResumePosition);
+audio.addEventListener('durationchange', applyResumePosition);
+audio.addEventListener('timeupdate', () => savePlaybackState());
+for (const event of ['pause','seeked']) audio.addEventListener(event, () => savePlaybackState(true));
+window.addEventListener('pagehide', () => savePlaybackState(true));
+document.addEventListener('visibilitychange', () => { if (document.hidden) savePlaybackState(true); });
 function recordPlay(s) {
   recent = [s.id, ...recent.filter(x => x !== s.id)].slice(0, 50);
   sb.from('recently_played').upsert({ user_id: me.id, song_id: s.id, played_at: new Date().toISOString() }, { onConflict: 'user_id,song_id' }).then(() => {});
@@ -1330,6 +1384,7 @@ const nextIndex = () => shuffleOn && queue.length > 1 ? Math.floor(Math.random()
 const prevIndex = () => qi > 0 ? qi - 1 : queue.length - 1;
 function resumeAudio() {
   if (!audio.src) return;
+  if (curSong && audioUrlExpiresAt && Date.now() >= audioUrlExpiresAt) return playIndex(qi, {position:pendingResume?.time ?? audio.currentTime});
   if (!safariIOS) ensureGraph();
   return audio.play().catch(() => toast('Tap play to start'));
 }
@@ -1414,7 +1469,7 @@ function parseLyrics(txt) {
   });
   return synced ? { lines: lines.filter(l => l.t !== null).sort((a, b) => a.t - b.t), synced } : { lines, synced };
 }
-const updHeart = () => $('fLike').classList.toggle('on', !!curSong && favs.has(curSong.id));
+const updHeart = () => { const liked = !!curSong && favs.has(curSong.id); $('fLike').classList.toggle('on', liked); $('fLike').setAttribute('aria-pressed', String(liked)); };
 async function setNowPlaying(s) {
   curSong = s;
   $('fT').textContent = s.title; $('fA').textContent = s.artist;
@@ -1517,7 +1572,7 @@ window.addEventListener('resize', () => { if (!$('full').hidden) { sizeCanvas(cv
 let scrubActive = false, scrubTime = null, scrubPointer = null;
 function syncScrub() {
   const duration = audio.duration, valid = Number.isFinite(duration) && duration > 0;
-  const time = scrubActive && scrubTime !== null ? scrubTime : audio.currentTime;
+  const time = scrubActive && scrubTime !== null ? scrubTime : (pendingResume?.time ?? audio.currentTime);
   pg.setAttribute('aria-disabled', String(!valid));
   pg.setAttribute('aria-valuemax', valid ? duration : 0);
   pg.setAttribute('aria-valuenow', valid ? Math.max(0, Math.min(duration, time)) : 0);
@@ -1569,8 +1624,20 @@ $('fNext').onclick = () => $('next').click();
 $('fLoop').onclick = () => { audio.loop = !audio.loop; $('fLoop').classList.toggle('on', audio.loop); };
 $('fShuf').onclick = () => { shuffleOn = !shuffleOn; $('fShuf').classList.toggle('on', shuffleOn); };
 $('fLyr').onclick = () => { const on = $('full').classList.toggle('lyrics'); $('fLyr').textContent = on ? 'Cover' : 'Lyrics'; if (!on) sizeCanvas(cv); };
-$('fAdd').onclick = () => curSong && openAddDialog(curSong.id);
-$('fLike').onclick = async () => { if (curSong) { await toggleFav(curSong.id); updHeart(); } };
+function musicActionFeedback(button, kind) {
+  if (!button) return;
+  if (!reducedMotion.matches) {
+    const frames = kind === 'like'
+      ? [{transform:'scale(1)'},{transform:'scale(1.35) rotate(-12deg)',offset:.4},{transform:'scale(.94) rotate(5deg)',offset:.75},{transform:'scale(1)'}]
+      : [{transform:'scale(1) rotate(0)'},{transform:'scale(1.18) rotate(90deg)',offset:.55},{transform:'scale(1) rotate(180deg)'}];
+    motion(button, frames, 380);
+  }
+  if (navigator.maxTouchPoints > 0 && typeof navigator.vibrate === 'function') {
+    try { navigator.vibrate(kind === 'like' ? 12 : 8); } catch (e) {}
+  }
+}
+$('fAdd').onclick = () => { if (curSong) { musicActionFeedback($('fAdd'), 'add'); openAddDialog(curSong.id); } };
+$('fLike').onclick = async () => { if (curSong) { musicActionFeedback($('fLike'), 'like'); await toggleFav(curSong.id); updHeart(); } };
 audio.addEventListener('play', syncPlaybackButtons);
 audio.addEventListener('pause', syncPlaybackButtons);
 audio.addEventListener('timeupdate', () => {
@@ -1678,6 +1745,7 @@ async function toggleFav(id) {
     favs.add(id);
   }
   document.querySelectorAll(`.song[data-sid="${id}"] [data-act="fav"]`).forEach(b => b.classList.toggle('on', favs.has(id)));
+  updHeart();
   if (view === 'liked') render(true);
 }
 function openAddDialog(songId) {
@@ -2100,8 +2168,8 @@ $('main').addEventListener('click', async e => {
   if (act === 'artist') { query = el.dataset.name; $('q').value = query; return renderResults(); }
   if (act === 'play' && s) { queue = lists[rowEl.dataset.l].slice(); return playIndex(Number(rowEl.dataset.i)); }
   if (act === 'playall') { const l = lists[el.dataset.l]; if (l && l.length) { queue = l.slice(); playIndex(0); } return; }
-  if (act === 'fav' && s) return toggleFav(s.id);
-  if (act === 'add' && s) return openAddDialog(s.id);
+  if (act === 'fav' && s) { musicActionFeedback(el, 'like'); return toggleFav(s.id); }
+  if (act === 'add' && s) { musicActionFeedback(el, 'add'); return openAddDialog(s.id); }
   if (act === 'open') return go('playlist', el.dataset.id);
   if (act === 'create') return createPlaylist();
   if (act === 'upload') return upload();
