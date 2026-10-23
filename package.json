@@ -1,0 +1,9 @@
+{
+  "name": "p2p-audio",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/version.cjs",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "engines": {"node": ">=20"}
+}
