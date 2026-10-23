@@ -2153,7 +2153,7 @@ function notifyWebsiteUpdate() {
     motion(notice, [{opacity:1},{opacity:0}],180).then(() => { notice.hidden = true; });
   }, 5000);
 }
-let updateChecking = false, updateCheckedAt = 0, pendingVersion = null, formEdited = false;
+let updateChecking = false, updateCheckedAt = 0, pendingVersion = null, formEdited = false, lastUpdateETag = null;
 document.addEventListener('input', e => { if (e.isTrusted && e.target.closest('input:not([type=range]), textarea, [contenteditable=true]')) formEdited = true; });
 function loadWebsiteUpdate() {
   if (!pendingVersion) return;
@@ -2163,32 +2163,43 @@ function loadWebsiteUpdate() {
   location.replace(url.href);
 }
 $('loadUpdate').onclick = loadWebsiteUpdate;
-async function checkWebsiteUpdate() {
-  if (document.hidden || updateChecking || Date.now() - updateCheckedAt < 30000 || navigator.onLine === false) return;
+function applyPendingUpdate() {
+  if (!pendingVersion) return;
+  let attempted = false;
+  try { attempted = sessionStorage.getItem('p2p_update_attempt') === pendingVersion; } catch (e) { attempted = true; }
+  const busy = current || incomingCall || !audio.paused || formEdited || document.querySelector('dialog[open]') || new URLSearchParams(location.search).has('code');
+  if (!busy && !attempted) loadWebsiteUpdate();
+  else $('updateAvailable').hidden = false;
+}
+async function checkWebsiteUpdate(force = false) {
+  if (document.hidden || updateChecking || Date.now() - updateCheckedAt < (force ? 2000 : 8000) || navigator.onLine === false) return;
   updateChecking = true; updateCheckedAt = Date.now();
   try {
     const url = new URL(location.href);
     // Fetch only the app document; never send OAuth codes to the update probe.
     url.search = ''; url.hash = ''; url.searchParams.set('_check', Date.now());
+    // After the first comparison, check just response headers when possible.
+    // This keeps frequent checks small on mobile connections.
+    if (lastUpdateETag) {
+      const head = await fetch(url.href, {method:'HEAD', cache:'no-store', signal:AbortSignal.timeout(10000)});
+      if (head.ok && head.headers.get('etag') === lastUpdateETag) { applyPendingUpdate(); return; }
+    }
     const response = await fetch(url.href, {cache:'no-store', signal:AbortSignal.timeout(10000)});
     if (!response.ok) return;
     const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
     if (!doc.querySelector('#appBox') || !doc.querySelector('#audio')) return;
+    lastUpdateETag = response.headers?.get('etag') || null;
     const version = sourceVersion(doc);
-    if (version === deliveredVersion) { $('updateAvailable').hidden = true; return; }
+    if (version === deliveredVersion) { pendingVersion = null; $('updateAvailable').hidden = true; return; }
     pendingVersion = version;
-    let attempted = false;
-    try { attempted = sessionStorage.getItem('p2p_update_attempt') === version; } catch (e) { attempted = true; }
-    const busy = current || incomingCall || !audio.paused || formEdited || document.querySelector('dialog[open]') || new URLSearchParams(location.search).has('code');
-    if (!busy && !attempted) loadWebsiteUpdate();
-    else $('updateAvailable').hidden = false;
+    applyPendingUpdate();
   } catch (e) { /* Offline or host unavailable: keep the current app running. */ }
   finally { updateChecking = false; }
 }
-window.addEventListener('pageshow', () => checkWebsiteUpdate());
-window.addEventListener('online', () => checkWebsiteUpdate());
-document.addEventListener('visibilitychange', () => { if (!document.hidden) checkWebsiteUpdate(); });
-setInterval(checkWebsiteUpdate, 60000);
+window.addEventListener('pageshow', () => checkWebsiteUpdate(true));
+window.addEventListener('online', () => checkWebsiteUpdate(true));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkWebsiteUpdate(true); });
+setInterval(checkWebsiteUpdate, 10000);
 // Register from either URL; the worker then refreshes bare-address navigations too.
 if ('serviceWorker' in navigator && window.isSecureContext) {
   const workerURL = new URL('./fresh-navigation-sw.js', location.href);
