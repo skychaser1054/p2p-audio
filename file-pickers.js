@@ -14,7 +14,7 @@ const specificLabels = {
 function describe(input) {
  const accept = (input.accept || '').toLowerCase();
  if (input.webkitdirectory || input.hasAttribute('webkitdirectory')) return {icon:'folder',title:specificLabels[input.id] || 'Choose folder',hint:'Import a music folder'};
- if (/audio|\.mp3|\.flac/.test(accept)) return {icon:'music',title:specificLabels[input.id] || (input.multiple?'Choose audio files':'Choose audio'),hint:input.multiple?'Add music from your device':'Browse your music files'};
+ if (input.dataset.mediaKind==='audio' || /audio|\.mp3|\.flac/.test(accept)) return {icon:'music',title:specificLabels[input.id] || (input.multiple?'Choose audio files':'Choose audio'),hint:input.multiple?'Add music from your device':'Browse your music files'};
  if (/image|\.png|\.jpg/.test(accept)) return {icon:'image',title:specificLabels[input.id] || 'Choose image',hint:'Browse your photos & artwork'};
  if (/\.lrc|\.txt|text\/plain/.test(accept)) return {icon:'file',title:specificLabels[input.id] || 'Choose lyrics',hint:'LRC or text file'};
  if (/\.json|application\/json/.test(accept)) return {icon:'file',title:specificLabels[input.id] || 'Choose playlist',hint:'Import a playlist file'};

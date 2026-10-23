@@ -302,8 +302,8 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   #lyr .now [data-word].sung { color:var(--green); }
   #lyr p:not(.now) [data-word] { color:inherit; }
 </style>
-<link rel="stylesheet" href="./library-upgrade.css?2c0419a4c4ce456b">
-<script src="./player-tools.js?2c0419a4c4ce456b"></script>
+<link rel="stylesheet" href="./library-upgrade.css?75789f3921002322">
+<script src="./player-tools.js?75789f3921002322"></script>
 </head>
 <body>
 
@@ -923,7 +923,7 @@ async function build(v) {
          <small>Only the administrator can publish to the Shared Library. Private uploads are visible only to their owner.</small>
          <input type="text" id="upTitle" maxlength="200" placeholder="Song title">
          <input type="text" id="upArtist" maxlength="200" placeholder="Artist">
-         <input type="file" id="upFile" accept="audio/*">
+         <input type="file" id="upFile" data-media-kind="audio">
          <small id="autoMetaStatus" role="status" aria-live="polite">Select an audio file to automatically read its title, artist, album artwork, and embedded lyrics. Review the results before uploading.</small>
          <img id="autoCoverPreview" alt="Detected album artwork" hidden style="width:144px;height:144px;object-fit:cover;border-radius:8px">
          <small>Album art (optional, up to 5 MB)</small>
@@ -2046,7 +2046,7 @@ function readMusicTags(file) {
     if (!window.jsmediatags) return resolve({});
     const timer = setTimeout(() => resolve({}), 12000);
     const done = tags => { clearTimeout(timer); resolve(tags); };
-    try { window.jsmediatags.read(file, {onSuccess:r => done(r.tags || {}), onError:() => done({})}); }
+    try { window.jsmediatags.read(MusicImport.metadataSource(file), {onSuccess:r => done(r.tags || {}), onError:() => done({})}); }
     catch (e) { done({}); }
   });
 }
@@ -2072,7 +2072,7 @@ function tagText(value) {
 function setUploadCover(blob, name='detected-cover.jpg') {
   // Keep the file independently; assigning input.files fails on some browsers.
   const file = new File([blob], name, {type:blob.type});
-  detectedCover = {file, audio:$('upFile')?.files[0]};
+  detectedCover = {file, audio:getUploadAudio()};
   const preview = $('autoCoverPreview');
   if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
   preview.dataset.objectUrl = URL.createObjectURL(file);
@@ -2107,17 +2107,20 @@ async function catalogCover(title, artist, album = '') {
   throw Error(failure ? 'Artwork could not be downloaded. Retry or choose an image.' : 'No matching artwork found. Check title and artist, retry, or choose an image.');
 }
 async function retryArtwork() {
-  const file = $('upFile')?.files[0], title = $('upTitle')?.value.trim(), artist = $('upArtist')?.value.trim();
+  const file = getUploadAudio(), title = $('upTitle')?.value.trim(), artist = $('upArtist')?.value.trim();
   if (!file || !title || !artist) return toast('Select a song and enter its title and artist first.');
   const request = ++autoMusicRequest, status = $('autoMetaStatus');
   status.textContent = 'Finding and downloading artwork…';
   try {
     const cover = await catalogCover(title, artist);
-    if (request !== autoMusicRequest || $('upFile')?.files[0] !== file || $('upTitle')?.value.trim() !== title || $('upArtist')?.value.trim() !== artist) return;
+    if (request !== autoMusicRequest || getUploadAudio() !== file || $('upTitle')?.value.trim() !== title || $('upArtist')?.value.trim() !== artist) return;
     $('upCover').value = ''; setUploadCover(cover);
     status.textContent = 'Artwork downloaded and ready to upload. Review the preview.';
   } catch (e) { if (request === autoMusicRequest && $('autoMetaStatus') === status) status.textContent = e.message; }
 }
+let selectedUploadAudio=null;
+function getUploadAudio(){const input=$('upFile');return input?(selectedUploadAudio?.input===input?selectedUploadAudio.file:input.files[0])||null:null;}
+function selectUploadAudio(file){const input=$('upFile');selectedUploadAudio={input,file};return file?beginMusicMetadata(file):Promise.resolve();}
 function beginMusicMetadata(file) {
   metadataTask = autoFillMusicUpload(file).catch(e => { if ($('autoMetaStatus')) $('autoMetaStatus').textContent = 'Metadata unavailable. Enter title and artist, then retry artwork.'; });
   return metadataTask;
@@ -2134,7 +2137,7 @@ async function autoFillMusicUpload(file) {
   if (detectedUploadLyrics !== null && lyricsField.value === detectedUploadLyrics) lyricsField.value = '';
   detectedUploadLyrics = null;
   const tags = await readMusicTags(file);
-  if (request !== autoMusicRequest || !$('upFile') || $('upFile').files[0] !== file) return;
+  if (request !== autoMusicRequest || !$('upFile') || getUploadAudio() !== file) return;
   const filename = file.name.replace(/\.[^.]+$/, '').replace(/_/g,' ');
   const parts = filename.split(/\s+-\s+/);
   const title = tagText(tags.title) || (parts.length > 1 ? parts.slice(1).join(' - ') : filename);
@@ -2149,7 +2152,7 @@ async function autoFillMusicUpload(file) {
       const picture = tags.picture;
       const mime = picture.format || 'image/jpeg';
       const blob = await validateCover(new Blob([new Uint8Array(picture.data)], {type:mime === 'image/jpg' ? 'image/jpeg' : mime}));
-      if (request !== autoMusicRequest || $('upFile')?.files[0] !== file) return;
+      if (request !== autoMusicRequest || getUploadAudio() !== file) return;
       coverFound = setUploadCover(blob, 'embedded-cover.'+(mime.includes('png')?'png':'jpg'));
     } catch(e) { console.warn('Embedded cover could not be read',e); }
   }
@@ -2157,13 +2160,13 @@ async function autoFillMusicUpload(file) {
     status.textContent = 'Identified '+title+' — '+artist+'. Looking for album artwork…';
     try {
       const cover = await catalogCover(title, artist, album);
-      if (request !== autoMusicRequest || $('upFile')?.files[0] !== file || $('upTitle')?.value.trim() !== title || $('upArtist')?.value.trim() !== artist) return;
+      if (request !== autoMusicRequest || getUploadAudio() !== file || $('upTitle')?.value.trim() !== title || $('upArtist')?.value.trim() !== artist) return;
       setUploadCover(cover);
       status.textContent = 'Title, artist, and catalog artwork ready. Review before uploading.';
       return;
     } catch(e) { if (request === autoMusicRequest && $('autoMetaStatus') === status) status.textContent = e.message; return; }
   }
-  if (request !== autoMusicRequest || $('upFile')?.files[0] !== file) return;
+  if (request !== autoMusicRequest || getUploadAudio() !== file) return;
   status.textContent = coverFound ? 'Title, artist and embedded artwork detected. '+(lyrics?'Embedded lyrics detected.':'No embedded lyrics found.') :
     'Title and artist filled where available. No embedded cover found. '+(lyrics?'Embedded lyrics detected.':'Lyrics can be added manually if you have permission.');
 }
@@ -2174,7 +2177,8 @@ async function uploadVerifiedCover(file, userId) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const path = `${userId}/${crypto.randomUUID()}.${ext}`;
     try {
-      const uploaded = await sb.storage.from('covers').upload(path, file, {contentType:file.type});
+      const body = await MusicImport.bytes(file,5*1024*1024);
+      const uploaded = await sb.storage.from('covers').upload(path, body, {contentType:file.type,upsert:false});
       if (uploaded.error) throw uploaded.error;
       const stored = await sb.storage.from('covers').download(path);
       if (stored.error) throw stored.error;
@@ -2193,12 +2197,15 @@ async function upload() {
   const btn = $('upBtn');
   if (!btn || btn.disabled) return;
   btn.disabled = true; btn.textContent = 'Preparing…';
-  let path = null, cover_path = null, saved = false;
+  let path = null, cover_path = null, saved = false, stage='Preparing audio';
+  const uploadUserId=me?.id;
   try {
     await metadataTask;
     if ($('upBtn') !== btn) return;
-    const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = $('upFile').files[0];
+    const title = $('upTitle').value.trim(), artist = $('upArtist').value.trim(), file = getUploadAudio();
     if (!title || !artist || !file) throw Error('Add a title, an artist, and a file.');
+    const prepared=await MusicImport.prepare(file);
+    if(!uploadUserId||me?.id!==uploadUserId||$('upBtn')!==btn||getUploadAudio()!==file)throw Error('Account or upload form changed. Please retry.');
     const visibility = $('upVisibility')?.value === 'shared' ? 'shared' : 'private';
     const skipCover = $('skipCover').checked;
     const cf = skipCover ? null : ($('upCover').files[0] || (detectedCover?.audio === file ? detectedCover.file : null));
@@ -2208,25 +2215,30 @@ async function upload() {
       btn.textContent = 'Finding synced lyrics…';
       try { lyrics = await findSyncedLyrics(title,artist,await readAudioDuration(file)); }
       catch (e) { /* Lyrics must never block an otherwise valid music upload. */ }
-      if (me?.id !== userId || $('upFile')?.files[0] !== file) throw Error('Song selection changed. Please retry.');
+      if (me?.id !== userId || getUploadAudio() !== file) throw Error('Song selection changed. Please retry.');
       const manual = $('upLyrics').value.trim(); if (manual) lyrics = manual;
       else if (lyrics) { $('upLyrics').value = lyrics; detectedUploadLyrics = lyrics; }
     }
-    if (cf) { btn.textContent = 'Saving and verifying artwork…'; cover_path = await uploadVerifiedCover(cf, userId); }
-    btn.textContent = 'Uploading song…';
-    const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if(me?.id!==userId||getUploadAudio()!==file)throw Error('Song selection or account changed. Please retry.');
+    if (cf) { stage='Saving artwork';btn.textContent = 'Saving and verifying artwork…'; cover_path = await uploadVerifiedCover(cf, userId); }
+    if(me?.id!==userId||getUploadAudio()!==file)throw Error('Song selection or account changed. Please retry.');
+    stage='Uploading audio';btn.textContent = 'Uploading song…';
+    const ext = prepared.extension;
     path = `${userId}/${crypto.randomUUID()}.${ext}`;
-    const up = await sb.storage.from('songs').upload(path, file, {contentType:file.type});
+    const up = await sb.storage.from('songs').upload(path, prepared.body, {contentType:prepared.mime,upsert:false});
     if (up.error) throw up.error;
+    stage='Saving library entry';
     const extraMetadata = await Upgrade.fileMetadata(file);
+    if(me?.id!==userId||getUploadAudio()!==file)throw Error('Song selection or account changed. Please retry.');
     const { error } = await sb.from('songs').insert({...extraMetadata,title, artist, storage_path:path, cover_path, visibility, lyrics});
     if (error) throw error;
     saved = true; toast(cover_path ? 'Song and artwork saved' : 'Song uploaded without artwork');
     await loadSongs();
     query = ''; go('search');
   } catch (e) {
-    if ($('autoMetaStatus')) $('autoMetaStatus').textContent = e.message || 'Upload failed. Please retry.';
-    toast(e.message || 'Upload failed. Please retry.');
+    const message=stage+': '+(e.message||'Upload failed. Please retry.');
+    if ($('autoMetaStatus')) $('autoMetaStatus').textContent=message;
+    toast(message);
   } finally {
     if (!saved) {
       if (path) await sb.storage.from('songs').remove([path]).catch(() => {});
@@ -2403,7 +2415,7 @@ $('main').addEventListener('change', async e => {
     const request = ++autoMusicRequest, selected = t.files[0];
     if (selected) { detectedCover = null; const status = $('autoMetaStatus'); try { const cover = await validateCover(selected); if ($('upCover') === t && request === autoMusicRequest && t.files[0] === selected) { setUploadCover(cover, selected.name); status.textContent = 'Selected artwork is ready.'; } } catch (e) { status.textContent = e.message; } }
   }
-  else if (t.id === 'upFile' && t.files[0]) { await beginMusicMetadata(t.files[0]); }
+  else if (t.id === 'upFile') { if(t.files[0]){try{MusicImport.audioType(t.files[0]);await selectUploadAudio(t.files[0]);}catch(e){selectedUploadAudio=null;t.value='';toast(e.message);}}else selectedUploadAudio=null; }
   else if (t.id === 'bgFile' && t.files[0]) { await idbSet('bg', t.files[0]); loadBg(); toast('Background set'); }
   else if (t.id === 'pfAv' && t.files[0]) { pfRmAv = false; const el = $('pfAvatar'); el.style.backgroundImage = `url("${URL.createObjectURL(t.files[0])}")`; el.textContent = ''; }
   else if (t.id === 'pfBd' && t.files[0]) { pfRmBd = false; $('pfBanner').style.backgroundImage = `url("${URL.createObjectURL(t.files[0])}")`; }
@@ -2547,8 +2559,9 @@ setInterval(checkWebsiteUpdate, 10000);
 
 
 </script>
-<script src="./file-pickers.js?2c0419a4c4ce456b"></script>
-<script src="./library-upgrade.js?2c0419a4c4ce456b"></script>
+<script src="./audio-import.js?75789f3921002322"></script>
+<script src="./file-pickers.js?75789f3921002322"></script>
+<script src="./library-upgrade.js?75789f3921002322"></script>
 <script>
 try {
   if (!Upgrade) throw Error('Player tools did not load');

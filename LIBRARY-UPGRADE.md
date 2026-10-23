@@ -41,3 +41,11 @@ Copy, cut, paste, native context menus, and user text selection are blocked acro
 ## File picker appearance
 
 File inputs use matching transparent PNG icons for music, artwork, folders, and documents. Native file inputs remain in place so phone/desktop file dialogs, accepted formats, folder selection, existing upload handlers, and disabled states work as before. Selected filenames and sizes appear on the button. Public PNG data is embedded in the versioned file-picker module for offline use; no upload content enters the app-shell cache.
+
+## iOS upload repair and direct-file URL import
+
+Audio pickers show all files so the iOS Files provider does not grey out music with missing MIME information. The app validates supported formats after selection. Song and cover uploads materialize nonempty bytes before sending, normalize audio MIME types from the filename, and send an ArrayBuffer body. Errors identify preparation, artwork, audio transfer, or library saving. Empty/incomplete iCloud files prompt a local download and retry.
+
+Upload Song also offers Import from a link. It accepts HTTPS direct audio-file URLs with browser-accessible downloads, up to 50 MB and ten minutes. Existing MP3 audio is kept; other decodable mono/stereo audio is converted to 192 kbps MP3 in a worker with lamejs 1.2.1. Metadata is read from the original file before MP3 encoding, then the existing title/artwork/lyrics/upload flow runs. Missing required artist/title/artwork pauses for review rather than inventing values. The URL option does not extract audio from YouTube, Spotify, SoundCloud, HTML pages, streaming manifests, or protected media. Some file hosts block cross-origin downloads. No site credentials are sent to the download host.
+
+Drag-and-drop links are accepted in the URL field. Existing clipboard/highlight restrictions remain in effect. Browser codec support and actual iPhone file-provider behavior still require device verification. The test suite covers binary upload bodies, empty/truncated files, MIME normalization, link validation, and remote response handling. The real encoder also produced independently verified mono/stereo MP3 test files at 44.1/48 kHz.

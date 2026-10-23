@@ -176,3 +176,14 @@ input[type=file].png-file-input{display:block!important;position:absolute!import
 .png-file-trigger img{width:19px;height:19px;object-fit:contain;opacity:.85}
 @media(max-width:820px){.png-file-visual{min-height:76px;padding:13px 14px;gap:11px}.png-file-art{width:42px;height:42px;border-radius:11px}.png-file-heading{font-size:13px}.png-file-caption{font-size:11px}.tools>.png-file-host{min-width:155px;max-width:100%}}
 @media(prefers-reduced-motion:reduce){.png-file-picker{transition:none}.png-file-picker:active{transform:none}}
+.url-import-panel{max-width:720px;margin:0 0 22px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.025)}
+.url-import-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:pointer;padding:17px 19px;font-size:14px;font-weight:600;list-style:none}
+.url-import-panel>summary::-webkit-details-marker{display:none}
+.url-import-panel>summary small{color:var(--sub);font-size:11px;font-weight:400}
+.url-import-content{padding:0 18px 18px}
+.audio-url-drop{padding:15px;border:1px dashed rgba(255,255,255,.2);border-radius:12px}
+.audio-url-drop.drag-over{border-color:var(--green);background:var(--tint)}
+.audio-url-drop input{width:100%;font-size:16px}
+.audio-url-drop small{display:block;color:var(--sub);font-size:11px;margin:8px 0 0}
+#audioUrlStatus{font-size:12px;line-height:1.6;margin-bottom:0}
+#audioUrlProgress{width:100%;accent-color:var(--green)}
