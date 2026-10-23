@@ -265,16 +265,8 @@
   #fPP { width:60px; height:60px; }
   #prev svg, #pp svg, #next svg, #fPrev svg, #fPP svg, #fNext svg { width:22px; height:22px; fill:currentColor; }
   #fPP svg { width:28px; height:28px; }
-  #scrubWrap { position:relative; width:100%; max-width:520px; height:56px; flex-shrink:0; }
-  #prog { display:block; width:100%; height:56px; pointer-events:none; }
-  #scrub { position:absolute; inset:0; margin:0; width:100%; height:56px; padding:0; cursor:grab; touch-action:none;
-    appearance:none; -webkit-appearance:none; background:transparent; --position:0%; }
-  #scrub:active { cursor:grabbing; }
-  #scrub::-webkit-slider-runnable-track { height:4px; border-radius:8px; background:linear-gradient(to right,var(--green) var(--position),rgba(255,255,255,.22) var(--position)); }
-  #scrub::-moz-range-track { height:4px; border-radius:8px; background:linear-gradient(to right,var(--green) var(--position),rgba(255,255,255,.22) var(--position)); }
-  #scrub::-webkit-slider-thumb { appearance:none; -webkit-appearance:none; width:16px; height:16px; margin-top:-6px; border-radius:50%; background:#fff; border:1px solid rgba(255,255,255,.7); box-shadow:0 1px 8px #0008; }
-  #scrub::-moz-range-thumb { width:16px; height:16px; border-radius:50%; background:#fff; border:1px solid rgba(255,255,255,.7); box-shadow:0 1px 8px #0008; }
-  #scrub:disabled { opacity:.4; cursor:default; }
+  #prog { display:block; flex-shrink:0; cursor:grab; touch-action:none; }
+  #prog.seeking { cursor:grabbing; }
 
   #updateNotice { position:fixed; z-index:100; top:calc(14px + var(--sat)); left:50%; transform:translateX(-50%);
     display:flex; align-items:center; gap:10px; padding:13px 20px; max-width:calc(100vw - 32px); border-radius:22px;
@@ -368,7 +360,7 @@
     <button class="ico" id="fAdd" aria-label="Add to playlist">＋</button>
     <button class="ico" id="editLyr" aria-label="Edit lyrics">✎</button>
   </div>
-  <div id="scrubWrap"><canvas id="prog" aria-hidden="true"></canvas><input id="scrub" type="range" min="0" max="1000" step="0.1" value="0" aria-label="Song position" aria-valuetext="0:00" disabled></div>
+  <canvas id="prog" role="slider" tabindex="0" aria-label="Song position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0:00"></canvas>
   <div class="ftime"><span id="fCur">0:00</span><span id="fDur">0:00</span></div>
   <div class="fctl">
     <button class="ico" id="fShuf" aria-label="Shuffle">⇄</button>
@@ -1425,35 +1417,54 @@ $('np').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); openFull
 $('fClose').onclick = closeFull;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('full').hidden) closeFull(); });
 window.addEventListener('resize', () => { if (!$('full').hidden) { sizeCanvas(cv); sizeCanvas(pg); } });
-const scrub = $('scrub');
-let scrubActive = false, scrubTime = null;
+let scrubActive = false, scrubTime = null, scrubPointer = null;
 function syncScrub() {
   const duration = audio.duration, valid = Number.isFinite(duration) && duration > 0;
-  scrub.disabled = !valid;
-  if (!scrubActive) scrub.value = valid ? audio.currentTime / duration * 1000 : 0;
-  scrub.style.setProperty('--position', (Number(scrub.value) / 10) + '%');
   const time = scrubActive && scrubTime !== null ? scrubTime : audio.currentTime;
-  scrub.setAttribute('aria-valuetext', fmt(time) + ' of ' + fmt(duration));
+  pg.setAttribute('aria-disabled', String(!valid));
+  pg.setAttribute('aria-valuemax', valid ? duration : 0);
+  pg.setAttribute('aria-valuenow', valid ? Math.max(0, Math.min(duration, time)) : 0);
+  pg.setAttribute('aria-valuetext', fmt(time) + ' of ' + fmt(duration));
   $('fCur').textContent = fmt(time); $('fDur').textContent = fmt(duration);
 }
-scrub.addEventListener('pointerdown', () => { scrubActive = !scrub.disabled; });
-scrub.addEventListener('input', () => {
-  if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
-  scrubActive = true;
-  scrubTime = Math.max(0, Math.min(audio.duration, Number(scrub.value) / 1000 * audio.duration));
+function previewSeek(e) {
+  const rect = pg.getBoundingClientRect();
+  if (!rect.width || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  scrubTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * audio.duration;
   syncScrub();
-});
+}
 function finishScrub(commit = true) {
   if (commit && scrubTime !== null && Number.isFinite(audio.duration)) audio.currentTime = Math.max(0, Math.min(audio.duration, scrubTime));
-  scrubActive = false; scrubTime = null; syncScrub();
-}
-scrub.addEventListener('change', () => finishScrub());
-scrub.addEventListener('pointerup', () => finishScrub());
-scrub.addEventListener('pointercancel', () => finishScrub(false));
-scrub.addEventListener('blur', () => finishScrub());
-for (const event of ['timeupdate','loadedmetadata','durationchange','emptied']) audio.addEventListener(event, () => {
-  if (event === 'emptied') { scrubActive = false; scrubTime = null; }
+  const pointer = scrubPointer;
+  scrubActive = false; scrubTime = null; scrubPointer = null;
+  pg.classList.remove('seeking');
+  if (pointer !== null && pg.hasPointerCapture(pointer)) pg.releasePointerCapture(pointer);
   syncScrub();
+}
+pg.addEventListener('pointerdown', e => {
+  if (scrubPointer !== null || e.button !== 0 || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  e.preventDefault();
+  scrubPointer = e.pointerId; scrubActive = true;
+  pg.setPointerCapture(e.pointerId); pg.classList.add('seeking');
+  previewSeek(e);
+});
+pg.addEventListener('pointermove', e => { if (e.pointerId === scrubPointer) previewSeek(e); });
+pg.addEventListener('pointerup', e => { if (e.pointerId === scrubPointer) { previewSeek(e); finishScrub(); } });
+pg.addEventListener('pointercancel', e => { if (e.pointerId === scrubPointer) finishScrub(false); });
+pg.addEventListener('lostpointercapture', () => { if (scrubActive) finishScrub(false); });
+pg.addEventListener('keydown', e => {
+  if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  if (['ArrowLeft','ArrowDown','ArrowRight','ArrowUp','Home','End'].includes(e.key)) {
+    e.preventDefault(); e.stopPropagation();
+    if (e.key === 'Home') audio.currentTime = 0;
+    else if (e.key === 'End') audio.currentTime = audio.duration;
+    else seekBy(e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -5 : 5);
+    syncScrub();
+  }
+});
+for (const event of ['timeupdate','loadedmetadata','durationchange','emptied']) audio.addEventListener(event, () => {
+  if (event === 'emptied') finishScrub(false);
+  else syncScrub();
 });
 $('fPP').onclick = () => $('pp').click();
 $('fPrev').onclick = () => $('prev').click();
