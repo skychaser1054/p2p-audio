@@ -2083,6 +2083,12 @@ window.addEventListener('pageshow', () => checkWebsiteUpdate());
 window.addEventListener('online', () => checkWebsiteUpdate());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkWebsiteUpdate(); });
 setInterval(checkWebsiteUpdate, 60000);
+// Register from either URL; the worker then refreshes bare-address navigations too.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  const workerURL = new URL('./fresh-navigation-sw.js', location.href);
+  navigator.serviceWorker.register(workerURL.href, {scope:new URL('./', workerURL).href, updateViaCache:'none'})
+    .catch(error => console.warn('Fresh navigation registration unavailable:', error));
+}
 notifyWebsiteUpdate();
 start();
 checkWebsiteUpdate();
