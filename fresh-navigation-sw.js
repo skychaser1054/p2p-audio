@@ -16,7 +16,7 @@ self.addEventListener('fetch',event=>{
   try{
    const network=new URL(url);if(navigation)network.searchParams.set('_fresh',Date.now().toString());
    const response=await fetch(navigation?new Request(network.href,{headers:request.headers,credentials:'same-origin',cache:'no-store'}):request);
-   if(!response.ok)throw Error('Network response unavailable');
+   if(!response.ok&&response.type!=='opaque')throw Error('Network response unavailable');
    if(navigation&&!response.headers.get('content-type')?.includes('text/html'))return response;
    await cache.put(cacheKey,response.clone());
    if(navigation){const headers=new Headers(response.headers);headers.set('Cache-Control','no-store, max-age=0');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}

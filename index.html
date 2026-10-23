@@ -7,6 +7,18 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>P2P Audio</title>
+<script data-worker-bootstrap>
+// Register before CDN dependencies so a worker update can repair a failed load.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const recover = () => { if (!window.musicToolsReady) location.reload(); };
+    if (document.readyState === 'complete') recover(); else window.addEventListener('load', recover, {once:true});
+  });
+  const workerURL = new URL('./fresh-navigation-sw.js', location.href);
+  navigator.serviceWorker.register(workerURL.href, {scope:new URL('./', workerURL).href, updateViaCache:'none'})
+    .then(reg => reg.update()).catch(error => console.warn('Offline shell registration unavailable:', error));
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
@@ -290,8 +302,8 @@
   #lyr .now [data-word].sung { color:var(--green); }
   #lyr p:not(.now) [data-word] { color:inherit; }
 </style>
-<link rel="stylesheet" href="./library-upgrade.css?4884c5693cc984d5">
-<script src="./player-tools.js?4884c5693cc984d5"></script>
+<link rel="stylesheet" href="./library-upgrade.css?e04ad3b7e35cf99b">
+<script src="./player-tools.js?e04ad3b7e35cf99b"></script>
 </head>
 <body>
 
@@ -2545,17 +2557,22 @@ window.addEventListener('pageshow', () => checkWebsiteUpdate(true));
 window.addEventListener('online', () => checkWebsiteUpdate(true));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkWebsiteUpdate(true); });
 setInterval(checkWebsiteUpdate, 10000);
-// Register from either URL; the worker then refreshes bare-address navigations too.
-if ('serviceWorker' in navigator && window.isSecureContext) {
-  const workerURL = new URL('./fresh-navigation-sw.js', location.href);
-  navigator.serviceWorker.register(workerURL.href, {scope:new URL('./', workerURL).href, updateViaCache:'none'})
-    .catch(error => console.warn('Fresh navigation registration unavailable:', error));
-}
+
 
 
 </script>
-<script src="./library-upgrade.js?4884c5693cc984d5"></script>
-<script>window.musicToolsReady=true; deliveredVersion=sourceVersion(document); notifyWebsiteUpdate(); start(); checkWebsiteUpdate();</script>
+<script src="./library-upgrade.js?e04ad3b7e35cf99b"></script>
+<script>
+try {
+  if (!Upgrade) throw Error('Player tools did not load');
+  window.musicToolsReady=true; deliveredVersion=sourceVersion(document);
+  notifyWebsiteUpdate(); start(); checkWebsiteUpdate();
+} catch (error) {
+  window.musicToolsReady=false; console.error('Player startup unavailable:',error);
+  const loading=document.getElementById('loading');loading.textContent='The player could not finish loading. Check your connection, then reload.';
+  const retry=document.createElement('button');retry.textContent='Reload player';retry.onclick=()=>location.reload();loading.append(retry);
+}
+</script>
 </body></html>
 
 
